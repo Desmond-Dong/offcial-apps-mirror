@@ -8,7 +8,7 @@ arch:
   - amd64
 boot: manual
 description: Scan for HDMI CEC devices
-image: homeassistant-{arch}-addon-cec_scan
+image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/{arch}-addon-cec_scan
 options: {}
 schema: {}
 startup: once
