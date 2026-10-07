@@ -209,10 +209,6 @@ apps:
     repository: hassio-addons/app-stirling-pdf
     target: stirling-pdf
     image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/stirling-pdf
-  tor:
-    repository: hassio-addons/app-tor
-    target: tor
-    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/tor
   traccar:
     repository: hassio-addons/app-traccar
     target: traccar
