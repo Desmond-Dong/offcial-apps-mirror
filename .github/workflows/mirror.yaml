@@ -229,9 +229,11 @@ jobs:
               fi
               seen="${seen}${final_name} "
 
-              # supervisor alias "homeassistant/..." -> ghcr.io/home-assistant
-              case "${image}" in
-                homeassistant/*) image="ghcr.io/home-assistant/${image#homeassistant/}" ;;
+              # no registry host (official core "homeassistant/..." and plain
+              # docker hub images) -> docker.io
+              case "${image%%/*}" in
+                *.*) ;;
+                *) image="docker.io/${image}" ;;
               esac
 
               # a trailing /{arch} placeholder (or no placeholder at all) means
@@ -256,10 +258,7 @@ jobs:
                 ;;
                 *)
                   name="${index_image##*/}"
-                  case "${index_image%%/*}" in
-                    *.*) src="${index_image}" ;;
-                    *) src="docker.io/${index_image}" ;;
-                  esac
+                  src="${index_image}"
                   rows+=("${name}"$'\t'"${version}"$'\t'"${src}"$'\t'"${final_name}"$'\t'"index"$'\t'"[]")
                 ;;
               esac
@@ -282,6 +281,9 @@ jobs:
     if: needs.prepare.outputs.matrix != '[]'
     strategy:
       fail-fast: false
+      # ~20 parallel jobs trip Aliyun ACR's registry API rate limit (429),
+      # which turns existence checks into false "missing" answers
+      max-parallel: 10
       matrix:
         addon: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
@@ -351,6 +353,21 @@ jobs:
             docker run --rm quay.io/skopeo/stable:latest "$@"
           }
 
+          # ACR personal edition rate limits the registry API (429); a failed
+          # existence check must be retried before treating the tag as absent,
+          # otherwise already-synced images get re-pushed every run.
+          dst_exists() {
+            local try=0
+            while [ "${try}" -lt 3 ]; do
+              if docker buildx imagetools inspect "$1" >/dev/null 2>&1; then
+                return 0
+              fi
+              try=$((try + 1))
+              [ "${try}" -lt 3 ] && sleep $((try * 5))
+            done
+            return 1
+          }
+
           if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
             echo "- ⏳ **${LABEL}** (\`${PREFIX}/${ADDON}:${VERSION}\`): syncing" >> "${GITHUB_STEP_SUMMARY}"
           fi
@@ -401,7 +418,7 @@ jobs:
               dst="${PREFIX}/${ADDON//\{arch\}/${harch}}:${VERSION}"
               src_ref="${SRC//\{arch\}/${harch}}:${VERSION}"
 
-              if [ "${FORCE}" != "true" ] && docker buildx imagetools inspect "${dst}" >/dev/null 2>&1; then
+              if [ "${FORCE}" != "true" ] && dst_exists "${dst}"; then
                 synced+=("${harch} (already up to date)")
                 continue
               fi
@@ -431,11 +448,12 @@ jobs:
             fi
 
             tags=()
+            copied=0
             while IFS=$'\t' read -r goarch variant; do
               harch="$(hassio_arch "${goarch}" "${variant}")"
               dst="${PREFIX}/${ADDON}-${harch}:${VERSION}"
 
-              if [ "${FORCE}" != "true" ] && docker buildx imagetools inspect "${dst}" >/dev/null 2>&1; then
+              if [ "${FORCE}" != "true" ] && dst_exists "${dst}"; then
                 synced+=("${harch} (already up to date)")
                 tags+=("${dst}")
                 continue
@@ -444,12 +462,16 @@ jobs:
               if copy_one "${src}" "${dst}" "${goarch}" "${variant}"; then
                 synced+=("${harch}")
                 tags+=("${dst}")
+                copied=$((copied + 1))
               else
                 failed+=("${harch}")
               fi
             done <<<"${plats}"
 
-            if [ "${#failed[@]}" -eq 0 ] && [ "${#tags[@]}" -gt 0 ]; then
+            # Rebuild the plain multi-arch tag only when something was pushed;
+            # if every arch was already up to date the index is unchanged, and
+            # re-publishing it would only burn ACR API quota (429s)
+            if [ "${#failed[@]}" -eq 0 ] && [ "${copied}" -gt 0 ] && [ "${#tags[@]}" -gt 0 ]; then
               if ! docker buildx imagetools create --tag "${PREFIX}/${ADDON}:${VERSION}" "${tags[@]}"; then
                 failed+=("index rebuild")
               fi
