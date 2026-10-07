@@ -220,6 +220,8 @@ jobs:
           DRY_RUN: "false"
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
         run: |
           set -uo pipefail
 
@@ -272,6 +274,14 @@ jobs:
           # exactly one platform out of a source index, dropping the
           # unknown/unknown provenance/SBOM attestation manifests that ACR
           # rejects ("403 blob type invalid").
+          # docker.io anonymous pulls are rate limited: authenticate when the
+          # source lives on docker.io, stay anonymous for ghcr.io
+          if [[ "${SRC}" == docker.io/* ]]; then
+            src_creds=(--src-creds "${DOCKER_USERNAME}:${DOCKER_PASSWORD}")
+          else
+            src_creds=(--src-no-creds)
+          fi
+
           copy_one() {
             local src_ref="$1" dst="$2" goarch="$3" variant="$4"
             local override=(--override-os linux --override-arch "${goarch}")
@@ -281,7 +291,7 @@ jobs:
               --format v2s2 \
               --dest-compress-format gzip \
               --dest-force-compress-format \
-              --src-no-creds \
+              "${src_creds[@]}" \
               --dest-creds "${ACR_USERNAME}:${ACR_PASSWORD}" \
               "docker://${src_ref}" "docker://${dst}"
           }
