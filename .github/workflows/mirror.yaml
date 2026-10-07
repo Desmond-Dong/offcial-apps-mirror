@@ -21,9 +21,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  UPSTREAM_REPOSITORY: https://github.com/hassio-addons/repository.git
-  EXTRA_UPSTREAM_REPOSITORIES: "esphome/home-assistant-addon music-assistant/home-assistant-addon"
-  SKIP_ADDONS: "tor netease_cloud_music_api"
+  UPSTREAM_REPOSITORIES: "esphome/home-assistant-addon music-assistant/home-assistant-addon home-assistant/addons"
+  SKIP_ADDONS: "netease_cloud_music_api"
   ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
   ACR_NAMESPACE: hassioapps
   REPO_NAME: Home Assistant Community Apps (Mirror)
@@ -40,40 +39,25 @@ jobs:
         with:
           ref: main
 
-      - name: Clone upstream repository
-        run: git clone --depth 1 "$UPSTREAM_REPOSITORY" "$RUNNER_TEMP/upstream"
-
-      - name: Mirror upstream tree
-        run: rsync -a --delete --exclude '.git' --exclude '.github' "$RUNNER_TEMP/upstream/" ./
-
-      - name: Mirror add-ons from extra upstreams
+      - name: Mirror add-ons from upstreams
         run: |
           set -euo pipefail
-          for repo in ${EXTRA_UPSTREAM_REPOSITORIES}; do
+          for repo in ${UPSTREAM_REPOSITORIES}; do
             dest="${RUNNER_TEMP}/upstream-${repo%%/*}"
             git clone --depth 1 --quiet "https://github.com/${repo}.git" "${dest}"
             for d in "${dest}"/*/; do
               d="${d%/}"
-              if [ -f "${d}/config.yaml" ]; then
-                rsync -a --delete "${d}/" "./$(basename "${d}")/"
+              name="$(basename "${d}")"
+              if [ ! -f "${d}/config.yaml" ]; then
+                continue
               fi
+              if [ -e "./${name}" ]; then
+                echo "::warning::${name}: already provided by another upstream, keeping the first one"
+                continue
+              fi
+              rsync -a --delete "${d}/" "./${name}/"
             done
           done
-
-      - name: Remove excluded add-ons
-        run: |
-          set -euo pipefail
-          for name in ${SKIP_ADDONS}; do
-            rm -rf "./${name}"
-          done
-
-      - name: Point image references at ACR
-        uses: jacobtomlinson/gha-find-replace@v3
-        with:
-          find: "ghcr.io/hassio-addons/"
-          replace: "${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/"
-          regex: false
-          include: "*/config.yaml"
 
       - name: Point esphome image references at ACR
         uses: jacobtomlinson/gha-find-replace@v3
@@ -91,49 +75,20 @@ jobs:
           regex: false
           include: "*/config.yaml"
 
-      - name: Turn arch placeholder into arch suffix
+      - name: Point official core image references at ACR
         uses: jacobtomlinson/gha-find-replace@v3
         with:
-          find: "/{arch}"
-          replace: "-{arch}"
+          find: "image: homeassistant/"
+          replace: "image: ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/"
           regex: false
           include: "*/config.yaml"
 
-      - name: Point .apps.yml images at ACR
-        uses: jacobtomlinson/gha-find-replace@v3
-        with:
-          find: "ghcr.io/hassio-addons/"
-          replace: "${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/"
-          regex: false
-          include: ".apps.yml"
-
-      - name: Drop excluded apps from .apps.yml
+      - name: Remove excluded add-ons
         run: |
-          python3 - <<'PY'
-          import os
-          skip = set(os.environ.get("SKIP_ADDONS", "").split())
-          path = ".apps.yml"
-          with open(path, encoding="utf-8") as f:
-              lines = f.read().splitlines(True)
-          out, drop = [], False
-          for line in lines:
-              if line and not line[0].isspace():
-                  drop = False
-              elif line.startswith("  ") and not line.startswith("    "):
-                  drop = line.strip().rstrip(":") in skip
-              if not drop:
-                  out.append(line)
-          with open(path, "w", encoding="utf-8") as f:
-              f.write("".join(out))
-          PY
-
-      - name: Point README at this repository
-        uses: jacobtomlinson/gha-find-replace@v3
-        with:
-          find: "https://github.com/hassio-addons/repository"
-          replace: "https://github.com/Desmond-Dong/offcial-apps-mirror"
-          regex: false
-          include: "README.md"
+          set -euo pipefail
+          for name in ${SKIP_ADDONS}; do
+            rm -rf "./${name}"
+          done
 
       - name: Write repository.json
         run: |
@@ -158,7 +113,7 @@ jobs:
       - name: Build sync list from upstream configs
         id: list
         env:
-          UPSTREAMS: "hassio-addons/repository esphome/home-assistant-addon music-assistant/home-assistant-addon"
+          UPSTREAMS: "esphome/home-assistant-addon music-assistant/home-assistant-addon home-assistant/addons"
         run: |
           set -euo pipefail
           seen=""
@@ -180,19 +135,48 @@ jobs:
                 continue
               fi
               seen="${seen}${dir_name} "
-              name="${image%%/\{arch\}}"         # ghcr.io/<org>/<name>[/{arch}] -> <name>
-              name="${name##*/}"                 # last path segment is the image name
-              case "${image%%/*}" in
-                *.*) src="${image%%/\{arch\}}" ;;
-                *) src="docker.io/${image%%/\{arch\}}" ;;
+
+              # supervisor alias "homeassistant/..." -> ghcr.io/home-assistant
+              case "${image}" in
+                homeassistant/*) image="ghcr.io/home-assistant/${image#homeassistant/}" ;;
               esac
-              rows+=("${name}"$'\t'"${version}"$'\t'"${src}"$'\t'"${dir_name}")
+
+              # a trailing /{arch} placeholder (or no placeholder at all) means
+              # the plain tag carries every platform (mode=index); an {arch}
+              # left inside the path means one image per architecture
+              # (mode=arch, official core add-ons)
+              index_image="${image%%/\{arch\}}"
+              case "${index_image}" in
+                *"{arch}"*)
+                  path="${index_image#*/}"
+                  path="${path#*/}"
+                  arches="$(awk '
+                    /^arch:/ { f=1; next }
+                    f && /^[ \t]*- / { sub(/^[ \t]*- /, ""); print; next }
+                    f && !/^[ \t]*$/ { f=0 }
+                  ' "${cfg}" | jq -R -s -c 'split("\n") | map(select(length > 0))')"
+                  if [ -z "${arches}" ] || [ "${arches}" = "[]" ]; then
+                    echo "::warning::${dir_name}: arch image without arch list, skipping"
+                    continue
+                  fi
+                  rows+=("${path}"$'\t'"${version}"$'\t'"${image}"$'\t'"${dir_name}"$'\t'"arch"$'\t'"${arches}")
+                ;;
+                *)
+                  name="${index_image##*/}"
+                  case "${index_image%%/*}" in
+                    *.*) src="${index_image}" ;;
+                    *) src="docker.io/${index_image}" ;;
+                  esac
+                  rows+=("${name}"$'\t'"${version}"$'\t'"${src}"$'\t'"${dir_name}"$'\t'"index"$'\t'"[]")
+                ;;
+              esac
             done
           done
           matrix="$(printf '%s\n' "${rows[@]}" | jq -c -R -s '
             split("\n")
             | map(select(length > 0) | split("\t") |
-                {name: .[0], version: .[1], src: .[2], label: .[3]})
+                {name: .[0], version: .[1], src: .[2], label: .[3],
+                 mode: .[4], arches: (.[5] | fromjson)})
           ')"
           echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
           echo "will sync $(jq 'length' <<<"${matrix}") add-ons"
@@ -230,6 +214,8 @@ jobs:
           LABEL: ${{ matrix.addon.label }}
           SRC: ${{ matrix.addon.src }}
           VERSION: ${{ matrix.addon.version }}
+          MODE: ${{ matrix.addon.mode }}
+          ARCHES: ${{ toJson(matrix.addon.arches) }}
           FORCE: ${{ inputs.force_sync || false }}
           DRY_RUN: "false"
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
@@ -254,6 +240,18 @@ jobs:
             esac
           }
 
+          go_arch() {
+            # Inverse of hassio_arch for --override-arch/--override-variant
+            case "$1" in
+              amd64) echo "amd64" ;;
+              aarch64) echo "arm64" ;;
+              i386) echo "386" ;;
+              armhf) echo "arm v6" ;;
+              armv7) echo "arm v7" ;;
+              *) echo "$1" ;;
+            esac
+          }
+
           run_skopeo() {
             docker run --rm quay.io/skopeo/stable:latest "$@"
           }
@@ -267,71 +265,97 @@ jobs:
             exit 0
           fi
 
-          src="${SRC}:${VERSION}"
-          src_raw="$(docker buildx imagetools inspect --raw "${src}" 2>/dev/null || true)"
-          if [ -z "${src_raw}" ]; then
-            echo "- ⚠️ **${LABEL}** \`${VERSION}\`: upstream image not published yet (${src})" >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
-          fi
-
-          # Real platforms only: unknown/unknown entries in the upstream index
-          # are provenance/SBOM attestation manifests, which Aliyun ACR
-          # rejects ("403 blob type invalid").
-          plats="$(jq -r '.manifests[]?
-            | select((.platform.os // "") != "unknown" and (.platform.architecture // "") != "unknown")
-            | "\(.platform.architecture)\t\(.platform.variant // "")"' <<<"${src_raw}" | sort -u)"
-          if [ -z "${plats}" ]; then
-            echo "- ⚠️ **${LABEL}** \`${VERSION}\`: no platform manifests in upstream index" >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
-          fi
-
           # Aliyun ACR (personal edition) only accepts gzip-compressed docker
           # schema2 content, while upstream ships zstd-compressed OCI layers:
           # --format v2s2 --dest-compress-format gzip --dest-force-compress-format
           # converts on the fly. --override-* (global flags) additionally pick
-          # exactly one platform out of the source index.
+          # exactly one platform out of a source index, dropping the
+          # unknown/unknown provenance/SBOM attestation manifests that ACR
+          # rejects ("403 blob type invalid").
+          copy_one() {
+            local src_ref="$1" dst="$2" goarch="$3" variant="$4"
+            local override=(--override-os linux --override-arch "${goarch}")
+            [ -n "${variant}" ] && override+=(--override-variant "${variant}")
+            run_skopeo copy \
+              "${override[@]}" \
+              --format v2s2 \
+              --dest-compress-format gzip \
+              --dest-force-compress-format \
+              --src-no-creds \
+              --dest-creds "${ACR_USERNAME}:${ACR_PASSWORD}" \
+              "docker://${src_ref}" "docker://${dst}"
+          }
+
           synced=()
           failed=()
-          while IFS=$'\t' read -r goarch variant; do
-            harch="$(hassio_arch "${goarch}" "${variant}")"
-            dst="${PREFIX}/${ADDON}-${harch}:${VERSION}"
 
-            if [ "${FORCE}" != "true" ] && docker buildx imagetools inspect "${dst}" >/dev/null 2>&1; then
-              synced+=("${harch} (already up to date)")
-              continue
+          if [ "${MODE}" = "arch" ]; then
+            # One image per architecture, named with {arch} inside the path
+            # (official core add-ons: {arch}-addon-<name>)
+            while IFS= read -r harch; do
+              [ -n "${harch}" ] || continue
+              set -- $(go_arch "${harch}")
+              dst="${PREFIX}/${NAME//\{arch\}/${harch}}:${VERSION}"
+              src_ref="${SRC//\{arch\}/${harch}}:${VERSION}"
+
+              if [ "${FORCE}" != "true" ] && docker buildx imagetools inspect "${dst}" >/dev/null 2>&1; then
+                synced+=("${harch} (already up to date)")
+                continue
+              fi
+
+              if copy_one "${src_ref}" "${dst}" "$1" "${2:-}"; then
+                synced+=("${harch}")
+              else
+                failed+=("${harch}")
+              fi
+            done <<<"$(jq -r '.[]' <<<"${ARCHES}")"
+          else
+            # Plain tag is a multi-arch index: copy every real platform to a
+            # per-arch tag, then rebuild the plain tag as an index over them
+            src="${SRC}:${VERSION}"
+            src_raw="$(docker buildx imagetools inspect --raw "${src}" 2>/dev/null || true)"
+            if [ -z "${src_raw}" ]; then
+              echo "- ⚠️ **${LABEL}** \`${VERSION}\`: upstream image not published yet (${src})" >> "${GITHUB_STEP_SUMMARY}"
+              exit 0
             fi
 
-            override=(--override-os linux --override-arch "${goarch}")
-            [ -n "${variant}" ] && override+=(--override-variant "${variant}")
-
-            if run_skopeo copy \
-                "${override[@]}" \
-                --format v2s2 \
-                --dest-compress-format gzip \
-                --dest-force-compress-format \
-                --src-no-creds \
-                --dest-creds "${ACR_USERNAME}:${ACR_PASSWORD}" \
-                "docker://${src}" "docker://${dst}"; then
-              synced+=("${harch}")
-            else
-              failed+=("${harch}")
+            plats="$(jq -r '.manifests[]?
+              | select((.platform.os // "") != "unknown" and (.platform.architecture // "") != "unknown")
+              | "\(.platform.architecture)\t\(.platform.variant // "")"' <<<"${src_raw}" | sort -u)"
+            if [ -z "${plats}" ]; then
+              echo "- ⚠️ **${LABEL}** \`${VERSION}\`: no platform manifests in upstream index" >> "${GITHUB_STEP_SUMMARY}"
+              exit 0
             fi
-          done <<<"${plats}"
+
+            tags=()
+            while IFS=$'\t' read -r goarch variant; do
+              harch="$(hassio_arch "${goarch}" "${variant}")"
+              dst="${PREFIX}/${ADDON}-${harch}:${VERSION}"
+
+              if [ "${FORCE}" != "true" ] && docker buildx imagetools inspect "${dst}" >/dev/null 2>&1; then
+                synced+=("${harch} (already up to date)")
+                tags+=("${dst}")
+                continue
+              fi
+
+              if copy_one "${src}" "${dst}" "${goarch}" "${variant}"; then
+                synced+=("${harch}")
+                tags+=("${dst}")
+              else
+                failed+=("${harch}")
+              fi
+            done <<<"${plats}"
+
+            if [ "${#failed[@]}" -eq 0 ] && [ "${#tags[@]}" -gt 0 ]; then
+              if ! docker buildx imagetools create --tag "${PREFIX}/${ADDON}:${VERSION}" "${tags[@]}"; then
+                failed+=("index rebuild")
+              fi
+            fi
+          fi
 
           if [ "${#failed[@]}" -gt 0 ]; then
-            echo "- ❌ **${LABEL}** \`${VERSION}\`: failed arch(es): ${failed[*]}" >> "${GITHUB_STEP_SUMMARY}"
+            echo "- ❌ **${LABEL}** \`${VERSION}\`: failed: ${failed[*]}" >> "${GITHUB_STEP_SUMMARY}"
             exit 1
           fi
 
-          tags=()
-          while IFS=$'\t' read -r goarch variant; do
-            tags+=("${PREFIX}/${ADDON}-$(hassio_arch "${goarch}" "${variant}"):${VERSION}")
-          done <<<"${plats}"
-
-          # Rebuild the plain multi-arch tag from the per-arch tags above
-          if docker buildx imagetools create --tag "${PREFIX}/${ADDON}:${VERSION}" "${tags[@]}"; then
-            echo "- ✅ **${LABEL}** \`${VERSION}\`: ${#synced[@]} platform(s) [${synced[*]}], index rebuilt" >> "${GITHUB_STEP_SUMMARY}"
-          else
-            echo "- ❌ **${LABEL}** \`${VERSION}\`: synced per-arch tags but index rebuild failed" >> "${GITHUB_STEP_SUMMARY}"
-            exit 1
-          fi
+          echo "- ✅ **${LABEL}** \`${VERSION}\`: ${#synced[@]} platform(s) [${synced[*]}]" >> "${GITHUB_STEP_SUMMARY}"
