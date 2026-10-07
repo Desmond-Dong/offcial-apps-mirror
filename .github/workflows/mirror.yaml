@@ -24,7 +24,7 @@ env:
   # Order matters: home-assistant/addons is processed first so official
   # add-ons always keep their original names; every other upstream that
   # hits an existing directory gets a numeric suffix on directory + slug.
-  EXTRA_UPSTREAM_REPOSITORIES: "home-assistant/addons esphome/home-assistant-addon music-assistant/home-assistant-addon"
+  UPSTREAM_REPOSITORIES: "home-assistant/addons hassio-addons/repository esphome/home-assistant-addon music-assistant/home-assistant-addon"
   SKIP_ADDONS: "tor netease_cloud_music_api"
   ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
   ACR_NAMESPACE: hassioapps
@@ -54,44 +54,26 @@ jobs:
             fi
           done
 
-      # hassio-addons lands first: its ghcr host rewrite and its trailing
-      # /{arch} -> -{arch} transform must run while ONLY hassio files exist,
-      # otherwise the generic arch transform would mangle the official
-      # "homeassistant/{arch}-addon-*" mid-path placeholder
-      - name: Mirror hassio-addons add-ons
+      # Copy order decides name ownership: home-assistant/addons is first so
+      # official add-ons always keep their original names; any other upstream
+      # that collides gets a numeric suffix on directory + slug. Image
+      # rewrites are applied afterwards, scoped to each upstream's own
+      # directory list, so no replace step can touch another origin's files.
+      - name: Mirror add-ons from upstreams
         run: |
           set -euo pipefail
-          dest="${RUNNER_TEMP}/upstream-hassio-addons"
-          git clone --depth 1 --quiet "https://github.com/hassio-addons/repository.git" "${dest}"
-          for d in "${dest}"/*/; do
-            d="${d%/}"
-            if [ -f "${d}/config.yaml" ]; then
-              rsync -a --delete "${d}/" "./$(basename "${d}")/"
-            fi
-          done
-          [ -f "${dest}/.apps.yml" ] && cp "${dest}/.apps.yml" ./.apps.yml
-          [ -f "${dest}/README.md" ] && cp "${dest}/README.md" ./README.md
-
-      - name: Point hassio-addons image references at ACR
-        uses: jacobtomlinson/gha-find-replace@v3
-        with:
-          find: "ghcr.io/hassio-addons/"
-          replace: "${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/"
-          regex: false
-          include: "*/config.yaml"
-
-      - name: Turn arch placeholder into arch suffix
-        uses: jacobtomlinson/gha-find-replace@v3
-        with:
-          find: "/{arch}"
-          replace: "-{arch}"
-          regex: false
-          include: "*/config.yaml"
-
-      - name: Mirror add-ons from extra upstreams
-        run: |
-          set -euo pipefail
-          for repo in ${EXTRA_UPSTREAM_REPOSITORIES}; do
+          : > "${RUNNER_TEMP}/dirs-official.txt"
+          : > "${RUNNER_TEMP}/dirs-hassio.txt"
+          : > "${RUNNER_TEMP}/dirs-esphome.txt"
+          : > "${RUNNER_TEMP}/dirs-music.txt"
+          for repo in ${UPSTREAM_REPOSITORIES}; do
+            case "${repo}" in
+              home-assistant/addons) list="${RUNNER_TEMP}/dirs-official.txt" ;;
+              hassio-addons/repository) list="${RUNNER_TEMP}/dirs-hassio.txt" ;;
+              esphome/home-assistant-addon) list="${RUNNER_TEMP}/dirs-esphome.txt" ;;
+              music-assistant/home-assistant-addon) list="${RUNNER_TEMP}/dirs-music.txt" ;;
+              *) continue ;;
+            esac
             dest="${RUNNER_TEMP}/upstream-${repo%%/*}"
             git clone --depth 1 --quiet "https://github.com/${repo}.git" "${dest}"
             for d in "${dest}"/*/; do
@@ -102,8 +84,6 @@ jobs:
               fi
               target="${name}"
               if [ -e "./${target}" ]; then
-                # Official add-ons keep their names; any other upstream that
-                # collides is renamed with a numeric suffix (directory + slug)
                 if [ "${repo}" = "home-assistant/addons" ]; then
                   echo "::warning::official ${name} shadows an existing directory, skipping"
                   continue
@@ -119,32 +99,37 @@ jobs:
               if [ "${target}" != "${name}" ]; then
                 sed -i "s/^slug:.*/slug: ${target}/" "./${target}/config.yaml"
               fi
+              echo "${target}" >> "${list}"
             done
+            # hassio-addons repository metadata reused by later steps
+            if [ "${repo}" = "hassio-addons/repository" ]; then
+              [ -f "${dest}/.apps.yml" ] && cp "${dest}/.apps.yml" ./.apps.yml
+              [ -f "${dest}/README.md" ] && cp "${dest}/README.md" ./README.md
+            fi
           done
 
-      - name: Point esphome image references at ACR
-        uses: jacobtomlinson/gha-find-replace@v3
-        with:
-          find: "ghcr.io/esphome/"
-          replace: "${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/"
-          regex: false
-          include: "*/config.yaml"
-
-      - name: Point music-assistant image references at ACR
-        uses: jacobtomlinson/gha-find-replace@v3
-        with:
-          find: "ghcr.io/music-assistant/"
-          replace: "${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/"
-          regex: false
-          include: "*/config.yaml"
-
-      - name: Point official core image references at ACR
-        uses: jacobtomlinson/gha-find-replace@v3
-        with:
-          find: "image: homeassistant/"
-          replace: "image: ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/"
-          regex: false
-          include: "*/config.yaml"
+      - name: Point image references at ACR per upstream
+        env:
+          ACR_TARGET: "${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}"
+        run: |
+          set -euo pipefail
+          rewrite() {
+            while IFS= read -r d; do
+              [ -n "${d}" ] || continue
+              sed -i "$2" "./${d}/config.yaml"
+            done < "$1"
+          }
+          # hassio-addons: swap the ghcr host and turn the trailing /{arch}
+          # placeholder into the -{arch} suffix the supervisor resolves
+          rewrite "${RUNNER_TEMP}/dirs-hassio.txt" \
+            "s|ghcr.io/hassio-addons/|${ACR_TARGET}/|g; s|/{arch}|-{arch}|g"
+          rewrite "${RUNNER_TEMP}/dirs-esphome.txt" \
+            "s|ghcr.io/esphome/|${ACR_TARGET}/|g"
+          rewrite "${RUNNER_TEMP}/dirs-music.txt" \
+            "s|ghcr.io/music-assistant/|${ACR_TARGET}/|g"
+          # official core add-ons use the supervisor alias homeassistant/
+          rewrite "${RUNNER_TEMP}/dirs-official.txt" \
+            "s|^image: homeassistant/|image: ${ACR_TARGET}/|"
 
       - name: Remove excluded add-ons
         run: |
