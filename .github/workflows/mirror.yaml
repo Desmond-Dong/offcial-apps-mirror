@@ -115,7 +115,7 @@ jobs:
             fi
             rows+=("${addon}"$'\t'"${version}")
           done
-          matrix="$(printf '%s\n' "${rows[@]}" | jq -R -s '
+          matrix="$(printf '%s\n' "${rows[@]}" | jq -c -R -s '
             split("\n")
             | map(select(length > 0) | split("\t") | {name: .[0], version: .[1]})
           ')"
