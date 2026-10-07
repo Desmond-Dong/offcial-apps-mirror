@@ -1,0 +1,251 @@
+---
+channel: stable
+apps:
+  actual-budget:
+    repository: hassio-addons/app-actual-budget
+    target: actual-budget
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/actual-budget
+  adguard:
+    repository: hassio-addons/app-adguard-home
+    target: adguard
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/adguard
+  aircast:
+    repository: hassio-addons/app-aircast
+    target: aircast
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/aircast
+  airsonos:
+    repository: hassio-addons/app-airsonos
+    target: airsonos
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/airsonos
+  appdaemon:
+    repository: hassio-addons/app-appdaemon
+    target: appdaemon
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/appdaemon
+  audiobookshelf:
+    repository: hassio-addons/app-audiobookshelf
+    target: audiobookshelf
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/audiobookshelf
+  bazarr:
+    repository: hassio-addons/app-bazarr
+    target: bazarr
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/bazarr
+  bitwarden:
+    repository: hassio-addons/app-vaultwarden
+    target: vaultwarden
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/bitwarden
+  bookstack:
+    repository: hassio-addons/app-bookstack
+    target: bookstack
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/bookstack
+  calibre-web:
+    repository: hassio-addons/app-calibre-web
+    target: calibre-web
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/calibre-web
+  chrony:
+    repository: hassio-addons/app-chrony
+    target: chrony
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/chrony
+  emqx:
+    repository: hassio-addons/app-emqx
+    target: emqx
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/emqx
+  example:
+    repository: hassio-addons/app-example
+    target: example
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/example
+  file-explorer:
+    repository: hassio-addons/app-file-explorer
+    target: file-explorer
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/file-explorer
+  foldingathome:
+    repository: hassio-addons/app-foldingathome
+    target: foldingathome
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/foldingathome
+  freshrss:
+    repository: hassio-addons/app-freshrss
+    target: freshrss
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/freshrss
+  ftp:
+    repository: hassio-addons/app-ftp
+    target: ftp
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/ftp
+  glances:
+    repository: hassio-addons/app-glances
+    target: glances
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/glances
+  grafana:
+    repository: hassio-addons/app-grafana
+    target: grafana
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/grafana
+  grocy:
+    repository: hassio-addons/app-grocy
+    target: grocy
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/grocy
+  homebox:
+    repository: hassio-addons/app-homebox
+    target: homebox
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/homebox
+  influxdb:
+    repository: hassio-addons/app-influxdb
+    target: influxdb
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/influxdb
+  jellyfin:
+    repository: hassio-addons/app-jellyfin
+    target: jellyfin
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/jellyfin
+  jupyterlab:
+    repository: hassio-addons/app-jupyterlab
+    target: jupyterlab
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/jupyterlab
+  lidarr:
+    repository: hassio-addons/app-lidarr
+    target: lidarr
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/lidarr
+  mealie:
+    repository: hassio-addons/app-mealie
+    target: mealie
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/mealie
+  motioneye:
+    repository: hassio-addons/app-motioneye
+    target: motioneye
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/motioneye
+  mqtt-explorer:
+    repository: hassio-addons/app-mqtt-explorer
+    target: mqtt-explorer
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/mqtt-explorer
+  mqtt-io:
+    repository: hassio-addons/app-mqtt-io
+    target: mqtt-io
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/mqtt-io
+  n8n:
+    repository: hassio-addons/app-n8n
+    target: n8n
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/n8n
+  node-red:
+    repository: hassio-addons/app-node-red
+    target: node-red
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/node-red
+  nginxproxymanager:
+    repository: hassio-addons/app-nginx-proxy-manager
+    target: proxy-manager
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/nginxproxymanager
+  nut:
+    repository: hassio-addons/app-nut
+    target: nut
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/nut
+  nzbget:
+    repository: hassio-addons/app-nzbget
+    target: nzbget
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/nzbget
+  overseerr:
+    repository: hassio-addons/app-seerr
+    target: seerr
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/overseerr
+  phpmyadmin:
+    repository: hassio-addons/app-phpmyadmin
+    target: phpmyadmin
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/phpmyadmin
+  plex:
+    repository: hassio-addons/app-plex
+    target: plex
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/plex
+  qbittorrent:
+    repository: hassio-addons/app-qbittorrent
+    target: qbittorrent
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/qbittorrent
+  radarr:
+    repository: hassio-addons/app-radarr
+    target: radarr
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/radarr
+  sonarr:
+    repository: hassio-addons/app-sonarr
+    target: sonarr
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/sonarr
+  spotify:
+    repository: hassio-addons/app-spotify-connect
+    target: spotify
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/spotify
+  spotweb:
+    repository: hassio-addons/app-spotweb
+    target: spotweb
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/spotweb
+  prowlarr:
+    repository: hassio-addons/app-prowlarr
+    target: prowlarr
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/prowlarr
+  syncthing:
+    repository: hassio-addons/app-syncthing
+    target: syncthing
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/syncthing
+  tailscale:
+    repository: hassio-addons/app-tailscale
+    target: tailscale
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/tailscale
+  tasmoadmin:
+    repository: hassio-addons/app-tasmoadmin
+    target: tasmoadmin
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/tasmoadmin
+  tautulli:
+    repository: hassio-addons/app-tautulli
+    target: tautulli
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/tautulli
+  thelounge:
+    repository: hassio-addons/app-thelounge
+    target: thelounge
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/thelounge
+  sabnzbd:
+    repository: hassio-addons/app-sabnzbd
+    target: sabnzbd
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/sabnzbd
+  ssh:
+    repository: hassio-addons/app-ssh
+    target: ssh
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/ssh
+  sqlite-web:
+    repository: hassio-addons/app-sqlite-web
+    target: sqlite-web
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/sqlite-web
+  stirling-pdf:
+    repository: hassio-addons/app-stirling-pdf
+    target: stirling-pdf
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/stirling-pdf
+  tor:
+    repository: hassio-addons/app-tor
+    target: tor
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/tor
+  traccar:
+    repository: hassio-addons/app-traccar
+    target: traccar
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/traccar
+  unifi:
+    repository: hassio-addons/app-unifi
+    target: unifi
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/unifi
+  uptime-kuma:
+    repository: hassio-addons/app-uptime-kuma
+    target: uptime-kuma
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/uptime-kuma
+  victoriametrics:
+    repository: hassio-addons/app-victoriametrics
+    target: victoriametrics
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/victoriametrics
+  vscode:
+    repository: hassio-addons/app-vscode
+    target: vscode
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/vscode
+  whisparr:
+    repository: hassio-addons/app-whisparr
+    target: whisparr
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/whisparr
+  wireguard:
+    repository: hassio-addons/app-wireguard
+    target: wireguard
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/wireguard
+  zerotier:
+    repository: hassio-addons/app-zerotier
+    target: zerotier
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/zerotier
+  zwave-js-ui:
+    repository: hassio-addons/app-zwave-js-ui
+    target: zwave-js-ui
+    image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/zwave-js-ui
