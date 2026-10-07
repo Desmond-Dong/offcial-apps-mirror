@@ -100,11 +100,8 @@ jobs:
         with:
           ref: main
 
-      - name: Install skopeo
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq skopeo
-          skopeo --version
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to Aliyun ACR
         uses: docker/login-action@v4
@@ -115,7 +112,6 @@ jobs:
 
       - name: Sync images
         env:
-          REGISTRY_AUTH_FILE: /home/runner/.docker/config.json
           FORCE: ${{ inputs.force_sync || false }}
           DRY_RUN: "false"
         run: |
@@ -124,11 +120,12 @@ jobs:
           PREFIX="${ACR_REGISTRY}/${ACR_NAMESPACE}"
           SYNCED=0
           SKIPPED=0
+          OUTDATED=0
           WARNED=0
           FAILED=0
           FAILURES=()
 
-          sync_pair() {
+          copy_image() {
             src="$1"
             dst="$2"
             if [ "${DRY_RUN}" = "true" ]; then
@@ -136,23 +133,40 @@ jobs:
               SYNCED=$((SYNCED + 1))
               return 0
             fi
-            if [ "${FORCE}" != "true" ] && skopeo inspect --format '{{.Digest}}' "docker://${dst}" >/dev/null 2>&1; then
-              SKIPPED=$((SKIPPED + 1))
-              return 0
-            fi
-            if ! skopeo inspect --format '{{.Digest}}' "docker://${src}" >/dev/null 2>&1; then
+
+            src_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "${src}" 2>/dev/null || true)"
+            if [ -z "${src_digest}" ]; then
               echo "warn: source image not published yet: ${src}"
               WARNED=$((WARNED + 1))
               return 0
             fi
-            if skopeo copy --all --retry-times 4 "docker://${src}" "docker://${dst}"; then
-              echo "synced ${dst}"
-              SYNCED=$((SYNCED + 1))
+
+            dst_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "${dst}" 2>/dev/null || true)"
+            if [ -z "${dst_digest}" ]; then
+              echo "new ${dst} (not in ACR yet)"
+            elif [ "${dst_digest}" = "${src_digest}" ] && [ "${FORCE}" != "true" ]; then
+              echo "up to date ${dst} (${src_digest})"
+              SKIPPED=$((SKIPPED + 1))
+              return 0
             else
-              echo "failed ${dst}"
-              FAILED=$((FAILED + 1))
-              FAILURES+=("${dst}")
+              echo "outdated ${dst}: ${dst_digest} -> ${src_digest}"
+              OUTDATED=$((OUTDATED + 1))
             fi
+
+            attempt=1
+            while [ "${attempt}" -le 3 ]; do
+              if docker buildx imagetools create --tag "${dst}" "${src}"; then
+                echo "synced ${dst}"
+                SYNCED=$((SYNCED + 1))
+                return 0
+              fi
+              echo "attempt ${attempt} failed for ${dst}"
+              sleep $((attempt * 5))
+              attempt=$((attempt + 1))
+            done
+            echo "failed ${dst}"
+            FAILED=$((FAILED + 1))
+            FAILURES+=("${dst}")
           }
 
           for cfg in */config.yaml; do
@@ -175,25 +189,26 @@ jobs:
                 continue
               fi
               for arch in ${archs}; do
-                sync_pair \
+                copy_image \
                   "ghcr.io/hassio-addons/${addon}/${arch}:${version}" \
                   "${PREFIX}/${addon}-${arch}:${version}"
               done
             else
-              sync_pair \
+              copy_image \
                 "ghcr.io/hassio-addons/${addon}:${version}" \
                 "${PREFIX}/${addon}:${version}"
             fi
           done
 
-          echo "done: synced=${SYNCED} skipped=${SKIPPED} warnings=${WARNED} failures=${FAILED}"
+          echo "done: synced=${SYNCED} up_to_date=${SKIPPED} outdated=${OUTDATED} warnings=${WARNED} failures=${FAILED}"
 
           if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
             {
               echo "### Image sync"
               echo ""
               echo "- synced: ${SYNCED}"
-              echo "- skipped (already present): ${SKIPPED}"
+              echo "- up to date (digest matches): ${SKIPPED}"
+              echo "- outdated (digest differs, re-synced): ${OUTDATED}"
               echo "- warnings: ${WARNED}"
               echo "- failures: ${FAILED}"
               if [ "${FAILED}" -gt 0 ]; then
