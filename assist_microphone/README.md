@@ -1,0 +1,15 @@
+> [!CAUTION]
+> [Wyoming Satellite](https://github.com/rhasspy/wyoming-satellite) project and therefore the Assist Microphone app have been deprecated, please migrate to the [Assist Satellite](https://github.com/OHF-Voice/apps/tree/main/assist_satellite) app for a newer alternative and more features.
+
+---
+
+# [DEPRECATED] Home Assistant App: Assist Microphone
+
+![Supports aarch64 Architecture][aarch64-shield] ![Supports amd64 Architecture][amd64-shield]
+
+Home Assistant app (formerly known as add-on) that uses a local USB microphone to control [Assist](https://www.home-assistant.io/voice_control/).
+
+Part of the [Year of Voice](https://www.home-assistant.io/blog/2022/12/20/year-of-voice/).
+
+[aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
+[amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
