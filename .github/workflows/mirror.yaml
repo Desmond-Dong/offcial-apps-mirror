@@ -21,14 +21,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Order matters: repos listed first win a directory-name collision,
-  # later repos skip dirs that already exist.
-  UPSTREAM_REPOSITORIES: "hassio-addons/repository esphome/home-assistant-addon music-assistant/home-assistant-addon home-assistant/addons"
-  # Rename (or drop with an empty target) a copied add-on directory and its
-  # slug so that same-named add-ons from different upstreams can coexist,
-  # mirroring haos-cn-scripts/addons.sh: community ssh -> ssh2, and the
-  # community mariadb is dropped in favour of the official one.
-  RENAME_ADDONS: "hassio-addons/repository:ssh=ssh2 hassio-addons/repository:mariadb="
+  # Order matters: home-assistant/addons is processed first so official
+  # add-ons always keep their original names; every other upstream that
+  # hits an existing directory gets a numeric suffix on directory + slug.
+  UPSTREAM_REPOSITORIES: "home-assistant/addons hassio-addons/repository esphome/home-assistant-addon music-assistant/home-assistant-addon"
   SKIP_ADDONS: "tor netease_cloud_music_api"
   ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
   ACR_NAMESPACE: hassioapps
@@ -58,27 +54,25 @@ jobs:
               if [ ! -f "${d}/config.yaml" ]; then
                 continue
               fi
-              if [ -e "./${name}" ]; then
-                echo "::warning::${name}: already provided by another upstream, keeping the first one"
-                continue
-              fi
-              rsync -a --delete "${d}/" "./${name}/"
-
-              # Apply the rename/drop table (see RENAME_ADDONS)
-              for pair in ${RENAME_ADDONS}; do
-                key="${pair%%=*}"
-                val="${pair#*=}"
-                if [ "${key}" = "${repo}:${name}" ]; then
-                  if [ -z "${val}" ]; then
-                    rm -rf "./${name}"
-                    echo "dropped ${name} (conflict resolution)"
-                  else
-                    mv "./${name}" "./${val}"
-                    sed -i "s/^slug:.*/slug: ${val}/" "./${val}/config.yaml"
-                    echo "renamed ${name} -> ${val} (conflict resolution)"
-                  fi
+              target="${name}"
+              if [ -e "./${target}" ]; then
+                # Official add-ons keep their names; any other upstream that
+                # collides is renamed with a numeric suffix (directory + slug)
+                if [ "${repo}" = "home-assistant/addons" ]; then
+                  echo "::warning::official ${name} shadows an existing directory, skipping"
+                  continue
                 fi
-              done
+                try=2
+                while [ -e "./${target}${try}" ]; do
+                  try=$((try + 1))
+                done
+                target="${name}${try}"
+                echo "renamed ${repo}/${name} -> ${target} (name collision)"
+              fi
+              rsync -a --delete "${d}/" "./${target}/"
+              if [ "${target}" != "${name}" ]; then
+                sed -i "s/^slug:.*/slug: ${target}/" "./${target}/config.yaml"
+              fi
             done
           done
 
@@ -188,9 +182,35 @@ jobs:
       - name: Build sync list from upstream configs
         id: list
         env:
-          UPSTREAMS: "hassio-addons/repository esphome/home-assistant-addon music-assistant/home-assistant-addon home-assistant/addons"
+          UPSTREAMS: "home-assistant/addons hassio-addons/repository esphome/home-assistant-addon music-assistant/home-assistant-addon"
         run: |
           set -euo pipefail
+          # Mirror the mirror job's name allocation: first upstream to claim a
+          # directory name keeps it (official goes first and is never
+          # renamed); later colliding add-ons get a numeric suffix
+          declare -A claimed=()
+          # Sets CLAIMED and returns 0, or returns 1 when an official add-on
+          # would shadow an existing one (official names are never renamed)
+          claim_name() {
+            local repo="$1" dir="$2" try=2 cand="${2}"
+            if [ -z "${claimed[${cand}]:-}" ]; then
+              claimed[${cand}]="${repo}"
+              CLAIMED="${cand}"
+              return 0
+            fi
+            if [ "${repo}" = "home-assistant/addons" ]; then
+              return 1
+            fi
+            while :; do
+              cand="${dir}${try}"
+              if [ -z "${claimed[${cand}]:-}" ]; then
+                claimed[${cand}]="${repo}"
+                CLAIMED="${cand}"
+                return 0
+              fi
+              try=$((try + 1))
+            done
+          }
           seen=""
           rows=()
           for repo in ${UPSTREAMS}; do
@@ -202,22 +222,11 @@ jobs:
               [ -f "${cfg}" ] || continue
               dir_name="$(basename "${d}")"
 
-              # Apply the same rename/drop table as the mirror job
-              final_name="${dir_name}"
-              drop=0
-              for pair in ${RENAME_ADDONS}; do
-                key="${pair%%=*}"
-                val="${pair#*=}"
-                if [ "${key}" = "${repo}:${dir_name}" ]; then
-                  if [ -z "${val}" ]; then
-                    drop=1
-                  else
-                    final_name="${val}"
-                  fi
-                fi
-              done
-              [ "${drop}" = "1" ] && continue
-
+              if ! claim_name "${repo}" "${dir_name}"; then
+                echo "::warning::official ${dir_name} would shadow an existing add-on, skipping"
+                continue
+              fi
+              final_name="${CLAIMED}"
               case " ${SKIP_ADDONS} " in *" ${final_name} "*) continue ;; esac
               case "${seen} " in *" ${final_name} "*) continue ;; esac
 
