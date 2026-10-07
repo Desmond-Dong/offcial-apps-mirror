@@ -1,0 +1,98 @@
+---
+name: Mirror upstream repository
+
+# yamllint disable-line rule:truthy
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      force_sync:
+        description: Force re-sync all images, ignoring tags already in ACR
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mirror-upstream
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPOSITORY: https://github.com/hassio-addons/repository.git
+  ACR_REGISTRY: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com
+  ACR_NAMESPACE: hassioapps
+  REPO_NAME: Home Assistant Community Apps (Mirror)
+  REPO_URL: https://github.com/Desmond-Dong/offcial-apps-mirror
+  REPO_MAINTAINER: Desmond-Dong
+
+jobs:
+  mirror:
+    name: Mirror repository files
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.sync.outputs.changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Clone upstream repository
+        run: git clone --depth 1 "$UPSTREAM_REPOSITORY" "$RUNNER_TEMP/upstream"
+
+      - name: Mirror files and rewrite references
+        id: sync
+        run: |
+          python3 .github/scripts/mirror.py "$RUNNER_TEMP/upstream" .
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Repository changes detected."
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Repository already up to date."
+          fi
+
+      - name: Commit and push
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: sync upstream repository $(git -C "$RUNNER_TEMP/upstream" rev-parse --short HEAD)"
+          git push
+
+  sync-images:
+    name: Sync images to Aliyun ACR
+    needs: mirror
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install skopeo
+        run: |
+          if ! command -v skopeo > /dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq skopeo
+          fi
+          skopeo --version
+
+      - name: Log in to Aliyun ACR
+        env:
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          echo "$ACR_PASSWORD" | skopeo login \
+            --username "$ACR_USERNAME" \
+            --password-stdin "$ACR_REGISTRY"
+
+      - name: Sync upstream images
+        env:
+          FORCE: ${{ inputs.force_sync || false }}
+        run: python3 .github/scripts/sync_images.py
