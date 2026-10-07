@@ -84,15 +84,14 @@ jobs:
           skopeo --version
 
       - name: Log in to Aliyun ACR
-        env:
-          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
-          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
-        run: |
-          echo "$ACR_PASSWORD" | skopeo login \
-            --username "$ACR_USERNAME" \
-            --password-stdin "$ACR_REGISTRY"
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
 
       - name: Sync upstream images
         env:
+          REGISTRY_AUTH_FILE: /home/runner/.docker/config.json
           FORCE: ${{ inputs.force_sync || false }}
         run: python3 .github/scripts/sync_images.py
