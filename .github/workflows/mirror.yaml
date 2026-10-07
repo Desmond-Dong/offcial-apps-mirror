@@ -100,15 +100,52 @@ jobs:
         with:
           ref: main
 
+      - name: Log in to Aliyun ACR
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          set -uo pipefail
+
+          REG="$(printf '%s' "${ACR_REGISTRY}" | tr -d '[:space:]')"
+          ACR_USER="$(printf '%s' "${ACR_USERNAME}" | tr -d '[:space:]')"
+          PASS="$(printf '%s' "${ACR_PASSWORD}" | tr -d '[:space:]')"
+
+          echo "registry        : ${REG}"
+          if [ "${#ACR_USER}" -ge 8 ]; then
+            echo "username        : ${ACR_USER:0:3}****${ACR_USER: -3} (len=${#ACR_USER})"
+          else
+            echo "username        : len=${#ACR_USER}"
+          fi
+          echo "password len    : ${#PASS}"
+          case "${ACR_REGISTRY}"  in *[[:space:]]*) echo "note: ACR_REGISTRY had surrounding whitespace, trimmed"  ;; esac
+          case "${ACR_USERNAME}"  in *[[:space:]]*) echo "note: ACR_USERNAME had surrounding whitespace, trimmed"  ;; esac
+          case "${ACR_PASSWORD}"  in *[[:space:]]*) echo "note: ACR_PASSWORD had surrounding whitespace, trimmed"  ;; esac
+
+          challenge="$(curl -sS -D - -o /dev/null --max-time 30 "https://${REG}/v2/" | tr -d '\r' | grep -i '^www-authenticate:' || true)"
+          realm="$(printf '%s' "${challenge}" | sed -E 's/.*realm="([^"]+)".*/\1/')"
+          service="$(printf '%s' "${challenge}" | sed -E 's/.*service="([^"]+)".*/\1/')"
+          echo "auth realm      : ${realm}"
+
+          probe() {
+            local label="$1" user="$2" pass="$3" body code
+            code="$(curl -sS -o /tmp/auth_probe.json -w '%{http_code}' --max-time 30 -u "${user}:${pass}" "${realm}?service=${service}" 2>/dev/null || true)"
+            body="$(cat /tmp/auth_probe.json 2>/dev/null || true)"
+            if [ "${code}" = "200" ]; then
+              echo "auth probe[${label}]: HTTP 200 - credentials ACCEPTED by Aliyun"
+            else
+              echo "auth probe[${label}]: HTTP ${code:-n/a} ${body}"
+            fi
+          }
+
+          probe raw "${ACR_USERNAME}" "${ACR_PASSWORD}"
+          probe trimmed "${ACR_USER}" "${PASS}"
+
+          printf '%s' "${PASS}" | docker login "${REG}" --username "${ACR_USER}" --password-stdin
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
-
-      - name: Log in to Aliyun ACR
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ secrets.ACR_REGISTRY }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
 
       - name: Sync images
         env:
