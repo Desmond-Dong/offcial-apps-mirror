@@ -22,7 +22,7 @@ concurrency:
 
 env:
   UPSTREAM_REPOSITORY: https://github.com/hassio-addons/repository.git
-  ACR_REGISTRY: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com
+  ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
   ACR_NAMESPACE: hassioapps
   REPO_NAME: Home Assistant Community Apps (Mirror)
   REPO_URL: https://github.com/Desmond-Dong/offcial-apps-mirror
