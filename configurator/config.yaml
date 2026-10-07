@@ -9,7 +9,7 @@ arch:
   - amd64
 homeassistant: 0.91.1
 homeassistant_api: true
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps-{arch}-addon-configurator
+image: homeassistant-{arch}-addon-configurator
 ingress: true
 init: false
 map:

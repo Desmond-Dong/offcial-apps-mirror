@@ -10,7 +10,7 @@ arch:
 auth_api: true
 discovery:
   - mqtt
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps-{arch}-addon-mosquitto
+image: homeassistant-{arch}-addon-mosquitto
 map:
   - ssl
   - share

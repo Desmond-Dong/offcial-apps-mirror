@@ -1,3 +1,0 @@
----
-network:
-  3000/tcp: Z-Wave JS server port
