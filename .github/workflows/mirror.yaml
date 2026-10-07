@@ -32,8 +32,6 @@ jobs:
   mirror:
     name: Mirror repository files
     runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.sync.outputs.changed }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,26 +41,53 @@ jobs:
       - name: Clone upstream repository
         run: git clone --depth 1 "$UPSTREAM_REPOSITORY" "$RUNNER_TEMP/upstream"
 
-      - name: Mirror files and rewrite references
-        id: sync
+      - name: Mirror upstream tree
+        run: rsync -a --delete --exclude '.git' --exclude '.github' "$RUNNER_TEMP/upstream/" ./
+
+      - name: Point image references at ACR
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          find: "ghcr.io/hassio-addons/"
+          replace: "${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/"
+          regex: false
+          include: "*/config.yaml"
+
+      - name: Turn arch placeholder into arch suffix
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          find: "/{arch}"
+          replace: "-{arch}"
+          regex: false
+          include: "*/config.yaml"
+
+      - name: Point .apps.yml images at ACR
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          find: "ghcr.io/hassio-addons/"
+          replace: "${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/"
+          regex: false
+          include: ".apps.yml"
+
+      - name: Point README at this repository
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          find: "https://github.com/hassio-addons/repository"
+          replace: "https://github.com/Desmond-Dong/offcial-apps-mirror"
+          regex: false
+          include: "README.md"
+
+      - name: Write repository.json
         run: |
-          python3 .github/scripts/mirror.py "$RUNNER_TEMP/upstream" .
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Repository changes detected."
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Repository already up to date."
-          fi
+          jq -n \
+            --arg name "$REPO_NAME" \
+            --arg url "$REPO_URL" \
+            --arg maintainer "$REPO_MAINTAINER" \
+            '{name: $name, url: $url, maintainer: $maintainer}' > repository.json
 
       - name: Commit and push
-        if: steps.sync.outputs.changed == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "chore: sync upstream repository $(git -C "$RUNNER_TEMP/upstream" rev-parse --short HEAD)"
-          git push
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: sync upstream repository"
 
   sync-images:
     name: Sync images to Aliyun ACR
@@ -77,21 +102,107 @@ jobs:
 
       - name: Install skopeo
         run: |
-          if ! command -v skopeo > /dev/null 2>&1; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq skopeo
-          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq skopeo
           skopeo --version
 
       - name: Log in to Aliyun ACR
         uses: docker/login-action@v4
         with:
-          registry: ${{ env.ACR_REGISTRY }}
+          registry: ${{ secrets.ACR_REGISTRY }}
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
 
-      - name: Sync upstream images
+      - name: Sync images
         env:
           REGISTRY_AUTH_FILE: /home/runner/.docker/config.json
           FORCE: ${{ inputs.force_sync || false }}
-        run: python3 .github/scripts/sync_images.py
+          DRY_RUN: "false"
+        run: |
+          set -uo pipefail
+
+          PREFIX="${ACR_REGISTRY}/${ACR_NAMESPACE}"
+          SYNCED=0
+          SKIPPED=0
+          WARNED=0
+          FAILED=0
+          FAILURES=()
+
+          sync_pair() {
+            src="$1"
+            dst="$2"
+            if [ "${DRY_RUN}" = "true" ]; then
+              echo "dry-run ${src} -> ${dst}"
+              SYNCED=$((SYNCED + 1))
+              return 0
+            fi
+            if [ "${FORCE}" != "true" ] && skopeo inspect --format '{{.Digest}}' "docker://${dst}" >/dev/null 2>&1; then
+              SKIPPED=$((SKIPPED + 1))
+              return 0
+            fi
+            if ! skopeo inspect --format '{{.Digest}}' "docker://${src}" >/dev/null 2>&1; then
+              echo "warn: source image not published yet: ${src}"
+              WARNED=$((WARNED + 1))
+              return 0
+            fi
+            if skopeo copy --all --retry-times 4 "docker://${src}" "docker://${dst}"; then
+              echo "synced ${dst}"
+              SYNCED=$((SYNCED + 1))
+            else
+              echo "failed ${dst}"
+              FAILED=$((FAILED + 1))
+              FAILURES+=("${dst}")
+            fi
+          }
+
+          for cfg in */config.yaml; do
+            addon="${cfg%/config.yaml}"
+            version="$(awk '/^version:/{print $2; exit}' "${cfg}" | tr -d "\"'")"
+            if [ -z "${version}" ]; then
+              echo "skip ${addon}: config has no version"
+              WARNED=$((WARNED + 1))
+              continue
+            fi
+            if grep -q '{arch}' "${cfg}"; then
+              archs="$(awk '
+                /^arch:/ { f=1; next }
+                f && /^[ \t]*- / { sub(/^[ \t]*- /, ""); print; next }
+                f && !/^[ \t]*$/ { f=0 }
+              ' "${cfg}")"
+              if [ -z "${archs}" ]; then
+                echo "skip ${addon}: arch placeholders but no arch list"
+                WARNED=$((WARNED + 1))
+                continue
+              fi
+              for arch in ${archs}; do
+                sync_pair \
+                  "ghcr.io/hassio-addons/${addon}/${arch}:${version}" \
+                  "${PREFIX}/${addon}-${arch}:${version}"
+              done
+            else
+              sync_pair \
+                "ghcr.io/hassio-addons/${addon}:${version}" \
+                "${PREFIX}/${addon}:${version}"
+            fi
+          done
+
+          echo "done: synced=${SYNCED} skipped=${SKIPPED} warnings=${WARNED} failures=${FAILED}"
+
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            {
+              echo "### Image sync"
+              echo ""
+              echo "- synced: ${SYNCED}"
+              echo "- skipped (already present): ${SKIPPED}"
+              echo "- warnings: ${WARNED}"
+              echo "- failures: ${FAILED}"
+              if [ "${FAILED}" -gt 0 ]; then
+                echo ""
+                for failure in "${FAILURES[@]}"; do
+                  echo "- \`${failure}\`"
+                done
+              fi
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+          [ "${FAILED}" -eq 0 ]
