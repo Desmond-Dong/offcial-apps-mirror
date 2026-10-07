@@ -1,0 +1,18 @@
+name: Whisparr
+version: 0.6.0
+slug: whisparr2
+description: Whisparr is an adult video collection manager for Usenet and BitTorrent
+  users
+url: https://github.com/hassio-addons/app-whisparr/tree/main/README.md
+webui: http://[HOST]:[PORT:6969]
+init: false
+arch:
+- aarch64
+- amd64
+map:
+- addon_config:rw
+- share:rw
+- media:rw
+ports:
+  6969/tcp: 6969
+image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/whisparr-{arch}
