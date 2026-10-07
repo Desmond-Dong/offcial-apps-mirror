@@ -398,7 +398,7 @@ jobs:
             while IFS= read -r harch; do
               [ -n "${harch}" ] || continue
               set -- $(go_arch "${harch}")
-              dst="${PREFIX}/${NAME//\{arch\}/${harch}}:${VERSION}"
+              dst="${PREFIX}/${ADDON//\{arch\}/${harch}}:${VERSION}"
               src_ref="${SRC//\{arch\}/${harch}}:${VERSION}"
 
               if [ "${FORCE}" != "true" ] && docker buildx imagetools inspect "${dst}" >/dev/null 2>&1; then
