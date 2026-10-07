@@ -42,6 +42,18 @@ jobs:
         with:
           ref: main
 
+      - name: Clean previously mirrored add-ons
+        run: |
+          set -euo pipefail
+          # Start from a clean managed set every run: the checkout contains
+          # last run's tree, and stale directories would otherwise win name
+          # collisions or hide upstream deletions
+          for d in */; do
+            if [ -f "${d}config.yaml" ] || [ -f "${d}config.json" ]; then
+              rm -rf "${d}"
+            fi
+          done
+
       - name: Mirror add-ons from upstreams
         run: |
           set -euo pipefail
