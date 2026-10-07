@@ -89,78 +89,79 @@ jobs:
         with:
           commit_message: "chore: sync upstream repository"
 
-  sync-images:
-    name: Sync images to Aliyun ACR
-    needs: mirror
+  prepare:
+    name: Prepare sync list
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    needs: mirror
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
           ref: main
 
+      - name: List add-ons to sync
+        id: list
+        run: |
+          set -euo pipefail
+          rows=()
+          for cfg in */config.yaml; do
+            addon="$(dirname "${cfg}")"
+            version="$(awk '/^version:/{print $2; exit}' "${cfg}" | tr -d "\"'")"
+            if [ -z "${version}" ]; then
+              echo "::warning::${addon}: config.yaml has no version, skipping"
+              continue
+            fi
+            rows+=("${addon}"$'\t'"${version}")
+          done
+          matrix="$(printf '%s\n' "${rows[@]}" | jq -R -s '
+            split("\n")
+            | map(select(length > 0) | split("\t") | {name: .[0], version: .[1]})
+          ')"
+          echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
+          echo "will sync $(jq 'length' <<<"${matrix}") add-ons"
+
+  sync-images:
+    name: Sync ${{ matrix.addon.name }} to Aliyun ACR
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    if: needs.prepare.outputs.matrix != '[]'
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        addon: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
       - name: Log in to Aliyun ACR
         env:
           ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
-          set -uo pipefail
-
+          set -euo pipefail
           REG="$(printf '%s' "${ACR_REGISTRY}" | tr -d '[:space:]')"
           ACR_USER="$(printf '%s' "${ACR_USERNAME}" | tr -d '[:space:]')"
           PASS="$(printf '%s' "${ACR_PASSWORD}" | tr -d '[:space:]')"
-
-          echo "registry        : ${REG}"
-          if [ "${#ACR_USER}" -ge 8 ]; then
-            echo "username        : ${ACR_USER:0:3}****${ACR_USER: -3} (len=${#ACR_USER})"
-          else
-            echo "username        : len=${#ACR_USER}"
-          fi
-          echo "password len    : ${#PASS}"
-          case "${ACR_REGISTRY}"  in *[[:space:]]*) echo "note: ACR_REGISTRY had surrounding whitespace, trimmed"  ;; esac
-          case "${ACR_USERNAME}"  in *[[:space:]]*) echo "note: ACR_USERNAME had surrounding whitespace, trimmed"  ;; esac
-          case "${ACR_PASSWORD}"  in *[[:space:]]*) echo "note: ACR_PASSWORD had surrounding whitespace, trimmed"  ;; esac
-
-          challenge="$(curl -sS -D - -o /dev/null --max-time 30 "https://${REG}/v2/" | tr -d '\r' | grep -i '^www-authenticate:' || true)"
-          realm="$(printf '%s' "${challenge}" | sed -E 's/.*realm="([^"]+)".*/\1/')"
-          service="$(printf '%s' "${challenge}" | sed -E 's/.*service="([^"]+)".*/\1/')"
-          echo "auth realm      : ${realm}"
-
-          probe() {
-            local label="$1" user="$2" pass="$3" body code
-            code="$(curl -sS -o /tmp/auth_probe.json -w '%{http_code}' --max-time 30 -u "${user}:${pass}" "${realm}?service=${service}" 2>/dev/null || true)"
-            body="$(cat /tmp/auth_probe.json 2>/dev/null || true)"
-            if [ "${code}" = "200" ]; then
-              echo "auth probe[${label}]: HTTP 200 - credentials ACCEPTED by Aliyun"
-            else
-              echo "auth probe[${label}]: HTTP ${code:-n/a} ${body}"
-            fi
-          }
-
-          probe raw "${ACR_USERNAME}" "${ACR_PASSWORD}"
-          probe trimmed "${ACR_USER}" "${PASS}"
-
           printf '%s' "${PASS}" | docker login "${REG}" --username "${ACR_USER}" --password-stdin
+          echo "logged in to ${REG}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
       - name: Sync images
         env:
+          ADDON: ${{ matrix.addon.name }}
+          VERSION: ${{ matrix.addon.version }}
           FORCE: ${{ inputs.force_sync || false }}
           DRY_RUN: "false"
-          JOBS: "4"
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
           set -uo pipefail
 
           PREFIX="${ACR_REGISTRY}/${ACR_NAMESPACE}"
-          LOGDIR="${RUNNER_TEMP}/sync-logs"
-          RESULT="${RUNNER_TEMP}/sync-results"
-          mkdir -p "${LOGDIR}" "${RESULT}"
 
           hassio_arch() {
             # Map a container platform (GOARCH + variant) to the HA arch name
@@ -181,149 +182,80 @@ jobs:
             docker run --rm quay.io/skopeo/stable:latest "$@"
           }
 
-          copy_platform() {
-            local addon="$1" version="$2" goarch="$3" variant="$4" src="$5"
-            local harch dst
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            echo "- ⏳ **${ADDON}** \`${VERSION}\`: syncing" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "- 🔈 **${ADDON}** \`${VERSION}\`: dry run, nothing pushed" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          src="ghcr.io/hassio-addons/${ADDON}:${VERSION}"
+          src_raw="$(docker buildx imagetools inspect --raw "${src}" 2>/dev/null || true)"
+          if [ -z "${src_raw}" ]; then
+            echo "- ⚠️ **${ADDON}** \`${VERSION}\`: upstream image not published yet" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          # Real platforms only: unknown/unknown entries in the upstream index
+          # are provenance/SBOM attestation manifests, which Aliyun ACR
+          # rejects ("403 blob type invalid").
+          plats="$(jq -r '.manifests[]?
+            | select((.platform.os // "") != "unknown" and (.platform.architecture // "") != "unknown")
+            | "\(.platform.architecture)\t\(.platform.variant // "")"' <<<"${src_raw}" | sort -u)"
+          if [ -z "${plats}" ]; then
+            echo "- ⚠️ **${ADDON}** \`${VERSION}\`: no platform manifests in upstream index" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          # Aliyun ACR (personal edition) only accepts gzip-compressed docker
+          # schema2 content, while upstream ships zstd-compressed OCI layers:
+          # --format v2s2 --dest-compress-format gzip --dest-force-compress-format
+          # converts on the fly. --override-* (global flags) additionally pick
+          # exactly one platform out of the source index.
+          synced=()
+          failed=()
+          while IFS=$'\t' read -r goarch variant; do
             harch="$(hassio_arch "${goarch}" "${variant}")"
-            dst="${PREFIX}/${addon}-${harch}:${version}"
+            dst="${PREFIX}/${ADDON}-${harch}:${VERSION}"
 
             if [ "${FORCE}" != "true" ] && docker buildx imagetools inspect "${dst}" >/dev/null 2>&1; then
-              echo "SKIP ${dst}" >> "${RESULT}/${addon}"
-              return 0
+              synced+=("${harch} (already up to date)")
+              continue
             fi
 
-            # Aliyun ACR (personal edition) rejects zstd-compressed OCI layers
-            # and in-toto attestation blobs with "403 blob type invalid", so
-            # convert every platform to gzip-compressed docker schema2 on the
-            # fly (--override-* also selects only the real platform out of the
-            # upstream index, dropping its unknown/unknown attestations).
-            local override=(--override-os linux --override-arch "${goarch}")
+            override=(--override-os linux --override-arch "${goarch}")
             [ -n "${variant}" ] && override+=(--override-variant "${variant}")
 
             if run_skopeo copy \
                 "${override[@]}" \
                 --format v2s2 \
-                --dest-force-compress-format gzip \
+                --dest-compress-format gzip \
+                --dest-force-compress-format \
                 --src-no-creds \
                 --dest-creds "${ACR_USERNAME}:${ACR_PASSWORD}" \
-                "docker://${src}" "docker://${dst}" >> "${LOGDIR}/${addon}.log" 2>&1; then
-              echo "SYNCED ${dst}" >> "${RESULT}/${addon}"
+                "docker://${src}" "docker://${dst}"; then
+              synced+=("${harch}")
             else
-              echo "FAILED ${dst}" >> "${RESULT}/${addon}"
+              failed+=("${harch}")
             fi
-          }
+          done <<<"${plats}"
 
-          sync_addon() {
-            local dir="$1" cfg addon version src src_raw plats goarch variant harch
-            cfg="${dir}/config.yaml"
-            addon="$(basename "${dir}")"
-            version="$(awk '/^version:/{print $2; exit}' "${cfg}" | tr -d "\"'")"
-
-            if [ -z "${version}" ]; then
-              echo "WARN ${addon}: config has no version" >> "${RESULT}/${addon}"
-              return 0
-            fi
-
-            if [ "${DRY_RUN}" = "true" ]; then
-              echo "OK ${addon} (dry-run)" >> "${RESULT}/${addon}"
-              return 0
-            fi
-
-            src="ghcr.io/hassio-addons/${addon}:${version}"
-            src_raw="$(docker buildx imagetools inspect --raw "${src}" 2>/dev/null || true)"
-            if [ -z "${src_raw}" ]; then
-              echo "WARN ${addon}: source image not published: ${src}" >> "${RESULT}/${addon}"
-              return 0
-            fi
-
-            # Real platforms only: unknown/unknown entries are the provenance
-            # and SBOM attestation manifests, which ACR cannot store.
-            plats="$(jq -r '.manifests[]?
-              | select((.platform.os // "") != "unknown" and (.platform.architecture // "") != "unknown")
-              | "\(.platform.architecture)\t\(.platform.variant // "")"' <<<"${src_raw}" | sort -u)"
-
-            if [ -z "${plats}" ]; then
-              echo "WARN ${addon}: no platform manifests in source index" >> "${RESULT}/${addon}"
-              return 0
-            fi
-
-            while IFS=$'\t' read -r goarch variant; do
-              copy_platform "${addon}" "${version}" "${goarch}" "${variant}" "${src}"
-            done <<<"${plats}"
-
-            # Rebuild the plain multi-arch tag from the per-arch tags above
-            local tags=() missing=0
-            while IFS=$'\t' read -r goarch variant; do
-              harch="$(hassio_arch "${goarch}" "${variant}")"
-              if docker buildx imagetools inspect "${PREFIX}/${addon}-${harch}:${version}" >/dev/null 2>&1; then
-                tags+=("${PREFIX}/${addon}-${harch}:${version}")
-              else
-                missing=1
-              fi
-            done <<<"${plats}"
-
-            if [ "${missing}" = "0" ]; then
-              if docker buildx imagetools create --tag "${PREFIX}/${addon}:${version}" "${tags[@]}" >> "${LOGDIR}/${addon}.log" 2>&1; then
-                echo "INDEX ${PREFIX}/${addon}:${version} (${#tags[@]} platforms)" >> "${RESULT}/${addon}"
-              else
-                echo "FAILED ${PREFIX}/${addon}:${version} (index assembly)" >> "${RESULT}/${addon}"
-              fi
-            else
-              echo "FAILED ${PREFIX}/${addon}:${version} (missing platform tags)" >> "${RESULT}/${addon}"
-            fi
-          }
-
-          export -f sync_addon copy_platform hassio_arch run_skopeo
-          export PREFIX FORCE DRY_RUN RESULT LOGDIR ACR_USERNAME ACR_PASSWORD
-
-          addons=()
-          for cfg in */config.yaml; do
-            addons+=("$(dirname "${cfg}")")
-          done
-          echo "syncing ${#addons[@]} addons, ${JOBS} at a time"
-
-          printf '%s\n' "${addons[@]}" | xargs -P "${JOBS}" -n1 bash -c 'sync_addon "$1"' _
-
-          synced=0 skipped=0 indexes=0 warns=0 fails=0
-          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-            {
-              echo "### Image sync"
-              echo ""
-            } >> "${GITHUB_STEP_SUMMARY}"
-          fi
-          for f in "${RESULT}"/*; do
-            addon="$(basename "${f}")"
-            while IFS= read -r line; do
-              case "${line}" in
-                SYNCED*) synced=$((synced + 1)) ;;
-                SKIP*) skipped=$((skipped + 1)) ;;
-                INDEX*) indexes=$((indexes + 1)) ;;
-                WARN*)
-                  warns=$((warns + 1))
-                  echo "warn: ${line#WARN }"
-                  ;;
-                FAILED*)
-                  fails=$((fails + 1))
-                  echo "FAILED: ${line#FAILED }"
-                  echo "  last log lines of ${addon}:"
-                  tail -n 15 "${LOGDIR}/${addon}.log" 2>/dev/null | sed 's/^/    /'
-                  ;;
-              esac
-            done < "${f}"
-          done
-
-          echo "done: images_synced=${synced} up_to_date=${skipped} indexes=${indexes} warnings=${warns} failures=${fails}"
-
-          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-            {
-              echo "- images synced: ${synced}"
-              echo "- up to date: ${skipped}"
-              echo "- multi-arch indexes written: ${indexes}"
-              echo "- warnings: ${warns}"
-              echo "- failures: ${fails}"
-              echo ""
-              echo "Each add-on is pushed as per-arch tags (\`<addon>-<arch>\`) plus a rebuilt multi-arch index (\`<addon>\`), converted to gzip/schema2 because Aliyun ACR rejects upstream zstd/OCI attestation content."
-            } >> "${GITHUB_STEP_SUMMARY}"
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "- ❌ **${ADDON}** \`${VERSION}\`: failed arch(es): ${failed[*]}" >> "${GITHUB_STEP_SUMMARY}"
+            exit 1
           fi
 
-          [ "${fails}" -eq 0 ]
+          tags=()
+          while IFS=$'\t' read -r goarch variant; do
+            tags+=("${PREFIX}/${ADDON}-$(hassio_arch "${goarch}" "${variant}"):${VERSION}")
+          done <<<"${plats}"
+
+          # Rebuild the plain multi-arch tag from the per-arch tags above
+          if docker buildx imagetools create --tag "${PREFIX}/${ADDON}:${VERSION}" "${tags[@]}"; then
+            echo "- ✅ **${ADDON}** \`${VERSION}\`: ${#synced[@]} platform(s) [${synced[*]}], index rebuilt" >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "- ❌ **${ADDON}** \`${VERSION}\`: synced per-arch tags but index rebuild failed" >> "${GITHUB_STEP_SUMMARY}"
+            exit 1
+          fi
