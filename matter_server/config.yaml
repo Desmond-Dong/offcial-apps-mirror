@@ -17,7 +17,7 @@ homeassistant: 2024.6.0
 host_ipc: false
 host_network: true
 host_dbus: true
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/{arch}-addon-matter-server
+image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps-{arch}-addon-matter-server
 ingress: true
 ingress_port: 5580
 panel_icon: mdi:matter

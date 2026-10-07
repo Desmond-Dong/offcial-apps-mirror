@@ -9,7 +9,7 @@ arch:
   - aarch64
   - amd64
 boot: manual
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/{arch}-addon-letsencrypt
+image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps-{arch}-addon-letsencrypt
 init: false
 map:
   - ssl:rw

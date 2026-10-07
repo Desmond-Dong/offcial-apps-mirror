@@ -24,7 +24,7 @@ privileged:
   - NET_RAW
 devices:
   - /dev/net/tun
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/{arch}-addon-otbr
+image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps-{arch}-addon-otbr
 init: false
 options:
   device: null
