@@ -304,7 +304,59 @@ jobs:
                  mode: .[4], arches: (.[5] | fromjson), ns: .[6]})
           ')"
           echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
+          printf '%s' "${matrix}" > "${RUNNER_TEMP}/matrix.json"
           echo "will sync $(jq 'length' <<<"${matrix}") add-ons"
+
+      - name: Pre-create repositories as public
+        env:
+          TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TENCENT_SECRET_ID}" ] || [ -z "${TENCENT_SECRET_KEY}" ]; then
+            echo "::warning::TENCENT_SECRET_ID / TENCENT_SECRET_KEY not configured; new repositories will be created private and flipped after sync"
+            exit 0
+          fi
+          pip install -q tencentcloud-sdk-python-tcr
+          python3 - <<'PY'
+          import json
+          import os
+
+          from tencentcloud.common import credential
+          from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
+          from tencentcloud.tcr.v20190924 import models, tcr_client
+
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "matrix.json"), encoding="utf-8") as f:
+              matrix = json.load(f)
+
+          cred = credential.Credential(os.environ["TENCENT_SECRET_ID"], os.environ["TENCENT_SECRET_KEY"])
+          client = tcr_client.TcrClient(cred, "ap-guangzhou")
+
+          repos = set()
+          for item in matrix:
+              ns = item["ns"]
+              if item["mode"] == "arch":
+                  for arch in item["arches"]:
+                      repos.add(f"{ns}/" + item["name"].replace("{arch}", arch))
+              else:
+                  repos.add(f"{ns}/{item['name']}")
+
+          created = skipped = 0
+          for repo in sorted(repos):
+              req = models.CreateRepositoryPersonalRequest()
+              req.RepoName = repo
+              req.Public = 1  # 1=public: anonymous pull from the moment images land
+              req.Description = "Home Assistant Community Apps (Mirror)"
+              try:
+                  client.CreateRepositoryPersonal(req)
+                  created += 1
+              except TencentCloudSDKException as exc:
+                  # already-existing repositories are left untouched here;
+                  # the post-sync step flips any that are still private
+                  print(f"note: {repo}: {exc}")
+                  skipped += 1
+          print(f"pre-created {created} public repositories, {skipped} already existed or skipped")
+          PY
 
   sync-images:
     name: Sync ${{ matrix.addon.label }} to Aliyun ACR
@@ -314,9 +366,8 @@ jobs:
     if: needs.prepare.outputs.matrix != '[]'
     strategy:
       fail-fast: false
-      # ~20 parallel jobs tripped Aliyun ACR rate limits; Tencent TCR so far
-      # shows no such throttling, so use the full free-plan parallelism
-      max-parallel: 20
+      # Tencent TCR personal edition allows at most 10 concurrent syncs
+      max-parallel: 10
       matrix:
         addon: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
