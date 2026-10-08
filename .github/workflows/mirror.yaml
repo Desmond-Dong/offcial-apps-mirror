@@ -355,6 +355,8 @@ jobs:
           set -uo pipefail
 
           PREFIX="${ACR_REGISTRY}/${NS}"
+          REPOS="repos.txt"
+          : > "${REPOS}"
 
           hassio_arch() {
             # Map a container platform (GOARCH + variant) to the HA arch name
@@ -451,6 +453,7 @@ jobs:
               set -- $(go_arch "${harch}")
               dst="${PREFIX}/${ADDON//\{arch\}/${harch}}:${VERSION}"
               src_ref="${SRC//\{arch\}/${harch}}:${VERSION}"
+              echo "${NS}/${ADDON//\{arch\}/${harch}}" >> "${REPOS}"
 
               if [ "${FORCE}" != "true" ] && dst_exists "${dst}"; then
                 synced+=("${harch} (already up to date)")
@@ -486,6 +489,7 @@ jobs:
             while IFS=$'\t' read -r goarch variant; do
               harch="$(hassio_arch "${goarch}" "${variant}")"
               dst="${PREFIX}/${ADDON}-${harch}:${VERSION}"
+              echo "${NS}/${ADDON}-${harch}" >> "${REPOS}"
 
               if [ "${FORCE}" != "true" ] && dst_exists "${dst}"; then
                 synced+=("${harch} (already up to date)")
@@ -510,6 +514,7 @@ jobs:
                 failed+=("index rebuild")
               fi
             fi
+            echo "${NS}/${ADDON}" >> "${REPOS}"
           fi
 
           if [ "${#failed[@]}" -gt 0 ]; then
@@ -518,3 +523,44 @@ jobs:
           fi
 
           echo "- ✅ **${LABEL}** \`${VERSION}\`: ${#synced[@]} platform(s) [${synced[*]}]" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Set repositories public
+        env:
+          TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+          NS: ${{ matrix.addon.ns }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TENCENT_SECRET_ID}" ] || [ -z "${TENCENT_SECRET_KEY}" ]; then
+            echo "::warning::TENCENT_SECRET_ID / TENCENT_SECRET_KEY not configured, repositories stay private"
+            exit 0
+          fi
+          pip install -q tencentcloud-sdk-python-tcr
+          python3 - <<'PY'
+          import os
+
+          from tencentcloud.common import credential
+          from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
+          from tencentcloud.tcr.v20190924 import models, tcr_client
+
+          repos = sorted({line.strip() for line in open("repos.txt", encoding="utf-8") if line.strip()})
+          cred = credential.Credential(os.environ["TENCENT_SECRET_ID"], os.environ["TENCENT_SECRET_KEY"])
+          client = tcr_client.TcrClient(cred, "ap-guangzhou")
+
+          failed = []
+          for repo in repos:
+              req = models.ModifyRepositoryAccessPersonalRequest()
+              req.RepoName = repo
+              req.Public = 1  # 1=public (anonymous pull), 0=private
+              try:
+                  client.ModifyRepositoryAccessPersonal(req)
+                  print(f"public: {repo}")
+              except TencentCloudSDKException as exc:
+                  # a repository that was never created (nothing pushed) has
+                  # nothing to publish - ignore, anything else is fatal
+                  print(f"warn: {repo}: {exc}")
+                  failed.append(repo)
+
+          if failed:
+              raise SystemExit(f"failed to set public: {failed}")
+          PY
