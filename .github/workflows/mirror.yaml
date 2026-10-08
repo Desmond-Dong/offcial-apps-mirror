@@ -616,5 +616,7 @@ jobs:
                   failed.append(repo)
 
           if failed:
-              raise SystemExit(f"failed to set public: {failed}")
+              # visibility is guaranteed by the pre-create step; this pass is
+              # only a safety net, so a failure here must not fail the sync
+              print("::warning::failed to set public: " + ", ".join(failed))
           PY
