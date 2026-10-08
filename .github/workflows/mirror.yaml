@@ -26,8 +26,8 @@ env:
   # hits an existing directory gets a numeric suffix on directory + slug.
   UPSTREAM_REPOSITORIES: "home-assistant/addons hassio-addons/repository esphome/home-assistant-addon music-assistant/home-assistant-addon"
   SKIP_ADDONS: "tor netease_cloud_music_api"
+  # secrets hold the Tencent TCR personal registry credentials
   ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
-  ACR_NAMESPACE: hassioapps
   REPO_NAME: Home Assistant Community Apps (Mirror)
   REPO_URL: https://github.com/Desmond-Dong/offcial-apps-mirror
   REPO_MAINTAINER: Desmond-Dong
@@ -108,9 +108,9 @@ jobs:
             fi
           done
 
-      - name: Point image references at ACR per upstream
+      - name: Point image references at registry per upstream
         env:
-          ACR_TARGET: "${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}"
+          REG: "${{ env.ACR_REGISTRY }}"
         run: |
           set -euo pipefail
           rewrite() {
@@ -122,14 +122,14 @@ jobs:
           # hassio-addons: swap the ghcr host and turn the trailing /{arch}
           # placeholder into the -{arch} suffix the supervisor resolves
           rewrite "${RUNNER_TEMP}/dirs-hassio.txt" \
-            "s|ghcr.io/hassio-addons/|${ACR_TARGET}/|g; s|/{arch}|-{arch}|g"
+            "s|ghcr.io/hassio-addons/|${REG}/hassio-addons/|g; s|/{arch}|-{arch}|g"
           rewrite "${RUNNER_TEMP}/dirs-esphome.txt" \
-            "s|ghcr.io/esphome/|${ACR_TARGET}/|g"
+            "s|ghcr.io/esphome/|${REG}/esphome/|g"
           rewrite "${RUNNER_TEMP}/dirs-music.txt" \
-            "s|ghcr.io/music-assistant/|${ACR_TARGET}/|g"
+            "s|ghcr.io/music-assistant/|${REG}/music-assistant/|g"
           # official core add-ons use the supervisor alias homeassistant/
           rewrite "${RUNNER_TEMP}/dirs-official.txt" \
-            "s|^image: homeassistant/|image: ${ACR_TARGET}/|"
+            "s|^image: homeassistant/|image: ${REG}/ha-apps/|"
 
       - name: Remove excluded add-ons
         run: |
@@ -142,7 +142,7 @@ jobs:
         uses: jacobtomlinson/gha-find-replace@v3
         with:
           find: "ghcr.io/hassio-addons/"
-          replace: "${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/"
+          replace: "${{ env.ACR_REGISTRY }}/hassio-addons/"
           regex: false
           include: ".apps.yml"
 
@@ -253,6 +253,15 @@ jobs:
               fi
               seen="${seen}${final_name} "
 
+              # per-upstream registry namespace
+              case "${repo}" in
+                home-assistant/addons) ns="ha-apps" ;;
+                hassio-addons/repository) ns="hassio-addons" ;;
+                esphome/home-assistant-addon) ns="esphome" ;;
+                music-assistant/home-assistant-addon) ns="music-assistant" ;;
+                *) ns="hassioapps" ;;
+              esac
+
               # no registry host (official core "homeassistant/..." and plain
               # docker hub images) -> docker.io
               case "${image%%/*}" in
@@ -278,12 +287,12 @@ jobs:
                     echo "::warning::${final_name}: arch image without arch list, skipping"
                     continue
                   fi
-                  rows+=("${path}"$'\t'"${version}"$'\t'"${image}"$'\t'"${final_name}"$'\t'"arch"$'\t'"${arches}")
+                  rows+=("${path}"$'\t'"${version}"$'\t'"${image}"$'\t'"${final_name}"$'\t'"arch"$'\t'"${arches}"$'\t'"${ns}")
                 ;;
                 *)
                   name="${index_image##*/}"
                   src="${index_image}"
-                  rows+=("${name}"$'\t'"${version}"$'\t'"${src}"$'\t'"${final_name}"$'\t'"index"$'\t'"[]")
+                  rows+=("${name}"$'\t'"${version}"$'\t'"${src}"$'\t'"${final_name}"$'\t'"index"$'\t'"[]"$'\t'"${ns}")
                 ;;
               esac
             done
@@ -292,7 +301,7 @@ jobs:
             split("\n")
             | map(select(length > 0) | split("\t") |
                 {name: .[0], version: .[1], src: .[2], label: .[3],
-                 mode: .[4], arches: (.[5] | fromjson)})
+                 mode: .[4], arches: (.[5] | fromjson), ns: .[6]})
           ')"
           echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
           echo "will sync $(jq 'length' <<<"${matrix}") add-ons"
@@ -335,6 +344,7 @@ jobs:
           VERSION: ${{ matrix.addon.version }}
           MODE: ${{ matrix.addon.mode }}
           ARCHES: ${{ toJson(matrix.addon.arches) }}
+          NS: ${{ matrix.addon.ns }}
           FORCE: ${{ inputs.force_sync || false }}
           DRY_RUN: "false"
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
@@ -344,7 +354,7 @@ jobs:
         run: |
           set -uo pipefail
 
-          PREFIX="${ACR_REGISTRY}/${ACR_NAMESPACE}"
+          PREFIX="${ACR_REGISTRY}/${NS}"
 
           hassio_arch() {
             # Map a container platform (GOARCH + variant) to the HA arch name
