@@ -314,9 +314,9 @@ jobs:
     if: needs.prepare.outputs.matrix != '[]'
     strategy:
       fail-fast: false
-      # ~20 parallel jobs trip Aliyun ACR's registry API rate limit (429),
-      # which turns existence checks into false "missing" answers
-      max-parallel: 10
+      # ~20 parallel jobs tripped Aliyun ACR rate limits; Tencent TCR so far
+      # shows no such throttling, so use the full free-plan parallelism
+      max-parallel: 20
       matrix:
         addon: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
