@@ -36,4 +36,4 @@ schema:
   envvars:
   - name: str
     value: str
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/bookstack
+image: ccr.ccs.tencentyun.com/hassio-addons/bookstack

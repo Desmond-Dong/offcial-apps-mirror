@@ -64,4 +64,4 @@ schema:
     endpoint: str?
     pre_shared_key: str?
     fwmark: str?
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/wireguard-{arch}
+image: ccr.ccs.tencentyun.com/hassio-addons/wireguard-{arch}

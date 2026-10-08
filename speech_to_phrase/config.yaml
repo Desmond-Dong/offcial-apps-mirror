@@ -22,4 +22,4 @@ schema:
 ports:
   "10300/tcp": null
 homeassistant: 2023.11.0
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/{arch}-addon-speech-to-phrase
+image: ccr.ccs.tencentyun.com/ha-apps/{arch}-addon-speech-to-phrase

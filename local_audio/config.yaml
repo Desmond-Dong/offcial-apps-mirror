@@ -5,7 +5,7 @@ description: >-
   Turns this Home Assistant system into a synchronized Sendspin player for
   Music Assistant, playing to speakers or a USB DAC attached to it.
 url: https://github.com/music-assistant/local-audio-addon
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/local-audio-addon
+image: ccr.ccs.tencentyun.com/music-assistant/local-audio-addon
 arch:
   - amd64
   - aarch64

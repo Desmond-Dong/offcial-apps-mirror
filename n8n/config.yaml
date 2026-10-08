@@ -54,4 +54,4 @@ schema:
   env_vars:
   - name: match(^[A-Z][A-Z0-9_]*$)
     value: str
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/n8n
+image: ccr.ccs.tencentyun.com/hassio-addons/n8n

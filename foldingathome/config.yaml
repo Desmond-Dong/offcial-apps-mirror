@@ -23,4 +23,4 @@ schema:
   account_token: str?
   machine_name: str
   cpus: int(1,)?
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/foldingathome-{arch}
+image: ccr.ccs.tencentyun.com/hassio-addons/foldingathome-{arch}

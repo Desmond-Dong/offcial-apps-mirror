@@ -14,4 +14,4 @@ map:
 - media:rw
 ports:
   8686/tcp: 8686
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/lidarr-{arch}
+image: ccr.ccs.tencentyun.com/hassio-addons/lidarr-{arch}

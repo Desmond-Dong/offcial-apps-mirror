@@ -29,4 +29,4 @@ schema:
   - str
   api_auth_token: str
   log_level: list(trace|debug|info|notice|warning|error|fatal)?
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/zerotier
+image: ccr.ccs.tencentyun.com/hassio-addons/zerotier

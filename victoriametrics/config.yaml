@@ -49,4 +49,4 @@ schema:
   certfile: str
   keyfile: str
   leave_front_door_open: bool?
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/victoriametrics
+image: ccr.ccs.tencentyun.com/hassio-addons/victoriametrics

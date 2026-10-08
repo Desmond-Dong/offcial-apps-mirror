@@ -10,7 +10,7 @@ arch:
   - amd64
 hassio_api: true
 init: false
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/{arch}-addon-duckdns
+image: ccr.ccs.tencentyun.com/ha-apps/{arch}-addon-duckdns
 map:
   - ssl:rw
 options:

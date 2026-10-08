@@ -43,4 +43,4 @@ schema:
   parental_block_host: str?
 backup_exclude:
 - '*/adguard/data/querylog.*'
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/adguard
+image: ccr.ccs.tencentyun.com/hassio-addons/adguard

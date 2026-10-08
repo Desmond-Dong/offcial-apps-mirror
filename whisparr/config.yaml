@@ -15,4 +15,4 @@ map:
 - media:rw
 ports:
   6969/tcp: 6969
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/whisparr-{arch}
+image: ccr.ccs.tencentyun.com/hassio-addons/whisparr-{arch}

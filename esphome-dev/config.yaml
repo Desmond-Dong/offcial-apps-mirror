@@ -16,6 +16,7 @@ map:
 - config:rw
 discovery:
 - esphome
+- mcp
 schema:
   home_assistant_dashboard_integration: bool?
   default_compile_process_limit: int(1,)?
@@ -30,7 +31,7 @@ panel_title: ESPHome Builder (dev)
 version: 2026.10.0-dev20261007
 slug: esphome-dev
 description: Development version of ESPHome Device Builder
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/esphome-hassio
+image: ccr.ccs.tencentyun.com/esphome/esphome-hassio
 stage: experimental
 options:
   home_assistant_dashboard_integration: false

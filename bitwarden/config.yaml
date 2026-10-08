@@ -24,4 +24,4 @@ schema:
   certfile: str
   keyfile: str
   request_size_limit: int?
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/bitwarden
+image: ccr.ccs.tencentyun.com/hassio-addons/bitwarden

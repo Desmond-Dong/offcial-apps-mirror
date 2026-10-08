@@ -93,4 +93,4 @@ schema:
   certfile: str
   keyfile: str
   grocy_ingress_user: str
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/grocy
+image: ccr.ccs.tencentyun.com/hassio-addons/grocy

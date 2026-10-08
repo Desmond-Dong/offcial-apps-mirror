@@ -15,4 +15,4 @@ map:
 - media:rw
 ports:
   9696/tcp: 9696
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/prowlarr
+image: ccr.ccs.tencentyun.com/hassio-addons/prowlarr

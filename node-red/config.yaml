@@ -67,4 +67,4 @@ schema:
   expose_node_resources: bool?
   safe_mode: bool?
   max_old_space_size: int?
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/node-red
+image: ccr.ccs.tencentyun.com/hassio-addons/node-red

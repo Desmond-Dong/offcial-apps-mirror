@@ -30,4 +30,4 @@ schema:
   ssl: bool
   certfile: str
   keyfile: str
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/traccar
+image: ccr.ccs.tencentyun.com/hassio-addons/traccar

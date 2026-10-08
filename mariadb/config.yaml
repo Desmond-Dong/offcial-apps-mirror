@@ -10,7 +10,7 @@ arch:
   - amd64
 backup_post: unlock-tables-for-backup
 backup_pre: lock-tables-for-backup
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/{arch}-addon-mariadb
+image: ccr.ccs.tencentyun.com/ha-apps/{arch}-addon-mariadb
 init: false
 options:
   databases:

@@ -11,7 +11,7 @@ audio: true
 hassio_api: true
 hassio_role: manager
 host_dbus: true
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/{arch}-addon-ssh
+image: ccr.ccs.tencentyun.com/ha-apps/{arch}-addon-ssh
 ingress: true
 init: false
 map:

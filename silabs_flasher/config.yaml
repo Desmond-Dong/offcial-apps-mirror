@@ -10,7 +10,7 @@ arch:
   - amd64
 gpio: true
 hassio_api: true
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/{arch}-addon-silabs-flasher
+image: ccr.ccs.tencentyun.com/ha-apps/{arch}-addon-silabs-flasher
 init: false
 options:
   device: null

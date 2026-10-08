@@ -60,4 +60,4 @@ schema:
   upsmon_deadtime: int?
   i_like_to_be_pwned: bool?
   leave_front_door_open: bool?
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/nut
+image: ccr.ccs.tencentyun.com/hassio-addons/nut

@@ -14,4 +14,4 @@ ports_description:
   3001/tcp: Web interface
 discovery:
 - uptime_kuma
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/uptime-kuma
+image: ccr.ccs.tencentyun.com/hassio-addons/uptime-kuma

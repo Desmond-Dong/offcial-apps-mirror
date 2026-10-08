@@ -20,7 +20,7 @@ host_uts: true
 privileged:
   - IPC_LOCK
   - NET_ADMIN
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/{arch}-addon-silabs-multiprotocol
+image: ccr.ccs.tencentyun.com/ha-apps/{arch}-addon-silabs-multiprotocol
 init: false
 options:
   device: null

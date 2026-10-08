@@ -39,4 +39,4 @@ schema:
   log_level: list(trace|debug|info|notice|warning|error|fatal)?
   memory_max: int?
   memory_init: int?
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/unifi
+image: ccr.ccs.tencentyun.com/hassio-addons/unifi

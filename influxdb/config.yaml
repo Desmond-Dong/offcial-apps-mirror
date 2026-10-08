@@ -49,4 +49,4 @@ schema:
   - name: match(^INFLUXDB_([A-Z0-9_])+$)
     value: str
   leave_front_door_open: bool?
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/influxdb
+image: ccr.ccs.tencentyun.com/hassio-addons/influxdb

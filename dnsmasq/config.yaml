@@ -7,7 +7,7 @@ url: https://github.com/home-assistant/addons/tree/master/dnsmasq
 arch:
   - aarch64
   - amd64
-image: crpi-tuq1xajq0lk6s0kt.cn-shanghai.personal.cr.aliyuncs.com/hassioapps/{arch}-addon-dnsmasq
+image: ccr.ccs.tencentyun.com/ha-apps/{arch}-addon-dnsmasq
 init: false
 options:
   defaults:
