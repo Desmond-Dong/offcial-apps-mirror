@@ -491,24 +491,31 @@ jobs:
 
             local attempt=1
             while [ "${attempt}" -le 2 ]; do
+              # phase 1: store the image verbatim on local disk - no format
+              # conversion, the dir transport rejects a zstd -> v2s2 manifest
+              # conversion; pulls run at full speed with no backpressure from
+              # the slow registry upload
               if docker run --rm -v "${stage}:/stage" quay.io/skopeo/stable copy \
                   "${override[@]}" \
+                  "${src_creds[@]}" \
+                  "docker://${src_ref}" "dir:/stage" \
+              # phase 2: push the local copy and convert to gzip schema2 here;
+              # reads come from local disk, so the docker.io source connection
+              # can no longer be starved by the slow registry upload
+                && docker run --rm -v "${stage}:/stage" quay.io/skopeo/stable copy \
                   --format v2s2 \
                   --dest-compress-format gzip \
                   --dest-force-compress-format \
-                  "${src_creds[@]}" \
-                  "docker://${src_ref}" "dir:/stage" \
-                && docker run --rm -v "${stage}:/stage" quay.io/skopeo/stable copy \
                   --dest-creds "${ACR_USERNAME}:${ACR_PASSWORD}" \
                   "dir:/stage" "docker://${dst}"; then
-                rm -rf "${stage}"
+                sudo rm -rf "${stage}"
                 return 0
               fi
               echo "copy attempt ${attempt} failed for ${dst}, retrying"
               attempt=$((attempt + 1))
               sleep 10
             done
-            rm -rf "${stage}"
+            sudo rm -rf "${stage}"
             return 1
           }
 
