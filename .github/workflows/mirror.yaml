@@ -33,8 +33,12 @@ env:
   REPO_MAINTAINER: Desmond-Dong
 
 jobs:
+  # The repository tree is published only after every add-on image has been
+  # pushed, so a config update can never reference an image that is not yet
+  # pullable
   mirror:
     name: Mirror repository files
+    needs: sync-images
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -190,7 +194,6 @@ jobs:
   prepare:
     name: Prepare sync list
     runs-on: ubuntu-latest
-    needs: mirror
     outputs:
       matrix: ${{ steps.list.outputs.matrix }}
     steps:
