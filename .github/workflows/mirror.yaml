@@ -439,10 +439,6 @@ jobs:
             esac
           }
 
-          run_skopeo() {
-            docker run --rm quay.io/skopeo/stable:latest "$@"
-          }
-
           # ACR personal edition rate limits the registry API (429); a failed
           # existence check must be retried before treating the tag as absent,
           # otherwise already-synced images get re-pushed every run.
@@ -482,18 +478,38 @@ jobs:
             src_creds=(--src-no-creds)
           fi
 
+          # Two-phase copy: pull the image from the source to local disk first
+          # (zstd -> gzip, OCI -> docker schema2 conversion happens here), then
+          # push the local copy to the registry. Streaming directly between
+          # the two registries lets the slow Tencent ingest backpressure the
+          # docker.io reads until they die with "unexpected EOF".
           copy_one() {
-            local src_ref="$1" dst="$2" goarch="$3" variant="$4"
+            local src_ref="$1" dst="$2" goarch="$3" variant="$4" stage="$5"
             local override=(--override-os linux --override-arch "${goarch}")
             [ -n "${variant}" ] && override+=(--override-variant "${variant}")
-            run_skopeo copy \
-              "${override[@]}" \
-              --format v2s2 \
-              --dest-compress-format gzip \
-              --dest-force-compress-format \
-              "${src_creds[@]}" \
-              --dest-creds "${ACR_USERNAME}:${ACR_PASSWORD}" \
-              "docker://${src_ref}" "docker://${dst}"
+            rm -rf "${stage}"
+
+            local attempt=1
+            while [ "${attempt}" -le 2 ]; do
+              if docker run --rm -v "${stage}:/stage" quay.io/skopeo/stable copy \
+                  "${override[@]}" \
+                  --format v2s2 \
+                  --dest-compress-format gzip \
+                  --dest-force-compress-format \
+                  "${src_creds[@]}" \
+                  "docker://${src_ref}" "dir:/stage" \
+                && docker run --rm -v "${stage}:/stage" quay.io/skopeo/stable copy \
+                  --dest-creds "${ACR_USERNAME}:${ACR_PASSWORD}" \
+                  "dir:/stage" "docker://${dst}"; then
+                rm -rf "${stage}"
+                return 0
+              fi
+              echo "copy attempt ${attempt} failed for ${dst}, retrying"
+              attempt=$((attempt + 1))
+              sleep 10
+            done
+            rm -rf "${stage}"
+            return 1
           }
 
           synced=()
@@ -514,7 +530,7 @@ jobs:
                 continue
               fi
 
-              if copy_one "${src_ref}" "${dst}" "$1" "${2:-}"; then
+              if copy_one "${src_ref}" "${dst}" "$1" "${2:-}" "${RUNNER_TEMP}/stage-${harch}"; then
                 synced+=("${harch}")
               else
                 failed+=("${harch}")
@@ -551,7 +567,7 @@ jobs:
                 continue
               fi
 
-              if copy_one "${src}" "${dst}" "${goarch}" "${variant}"; then
+              if copy_one "${src}" "${dst}" "${goarch}" "${variant}" "${RUNNER_TEMP}/stage-${harch}"; then
                 synced+=("${harch}")
                 tags+=("${dst}")
                 copied=$((copied + 1))
