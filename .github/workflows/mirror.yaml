@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       force_sync:
-        description: Force re-sync all images, ignoring tags already in ACR
+        description: Force re-sync all images, ignoring tags already in the registry
         type: boolean
         required: false
         default: false
@@ -142,7 +142,7 @@ jobs:
             rm -rf "./${name}"
           done
 
-      - name: Point .apps.yml images at ACR
+      - name: Point .apps.yml images at TCR
         uses: jacobtomlinson/gha-find-replace@v3
         with:
           find: "ghcr.io/hassio-addons/"
@@ -362,7 +362,7 @@ jobs:
           PY
 
   sync-images:
-    name: Sync ${{ matrix.addon.label }} to Aliyun ACR
+    name: Sync ${{ matrix.addon.label }} to Tencent TCR
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -374,7 +374,7 @@ jobs:
       matrix:
         addon: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
-      - name: Log in to Aliyun ACR
+      - name: Log in to Tencent TCR
         env:
           ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
@@ -439,7 +439,7 @@ jobs:
             esac
           }
 
-          # ACR personal edition rate limits the registry API (429); a failed
+          # TCR personal edition rate limits the registry API (429); a failed
           # existence check must be retried before treating the tag as absent,
           # otherwise already-synced images get re-pushed every run.
           dst_exists() {
@@ -463,12 +463,12 @@ jobs:
             exit 0
           fi
 
-          # Aliyun ACR (personal edition) only accepts gzip-compressed docker
+          # Tencent TCR (personal edition) only accepts gzip-compressed docker
           # schema2 content, while upstream ships zstd-compressed OCI layers:
           # --format v2s2 --dest-compress-format gzip --dest-force-compress-format
           # converts on the fly. --override-* (global flags) additionally pick
           # exactly one platform out of a source index, dropping the
-          # unknown/unknown provenance/SBOM attestation manifests that ACR
+          # unknown/unknown provenance/SBOM attestation manifests that TCR
           # rejects ("403 blob type invalid").
           # docker.io anonymous pulls are rate limited: authenticate when the
           # source lives on docker.io, stay anonymous for ghcr.io.
@@ -584,7 +584,7 @@ jobs:
 
             # Rebuild the plain multi-arch tag only when something was pushed;
             # if every arch was already up to date the index is unchanged, and
-            # re-publishing it would only burn ACR API quota (429s)
+            # re-publishing it would only burn TCR API quota (429s)
             if [ "${#failed[@]}" -eq 0 ] && [ "${copied}" -gt 0 ] && [ "${#tags[@]}" -gt 0 ]; then
               if ! docker buildx imagetools create --tag "${PREFIX}/${ADDON}:${VERSION}" "${tags[@]}"; then
                 failed+=("index rebuild")
