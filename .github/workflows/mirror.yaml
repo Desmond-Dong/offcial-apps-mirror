@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: mirror-upstream
@@ -33,18 +34,50 @@ env:
   REPO_MAINTAINER: Desmond-Dong
 
 jobs:
-  # The repository tree is published only after every add-on image has been
-  # pushed, so a config update can never reference an image that is not yet
-  # pullable
+  # The repository tree is published after the image sync completes, but an
+  # add-on whose images failed to sync is held back from the tree until its
+  # images are pullable - synced add-ons are published, failed ones are
+  # delayed, and each next run retries the delayed ones
   mirror:
     name: Mirror repository files
     needs: sync-images
+    if: always() && needs.sync-images.result != 'skipped'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
           ref: main
+
+      - name: Collect add-ons whose images failed to sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          failed="${RUNNER_TEMP}/failed-addons.txt"
+          : > "${failed}"
+          # retry: a transient GitHub API failure must not block publishing
+          attempt=1
+          while [ "${attempt}" -le 3 ]; do
+            if gh api \
+              "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" \
+              --paginate \
+              --jq '.jobs[] | select(.name | startswith("Sync ")) | "\(.name)\t\(.conclusion // .status)"' \
+            | while IFS=$'\t' read -r name status; do
+                label="${name#Sync }"
+                label="${label% to Tencent TCR}"
+                if [ "${status}" != "success" ]; then
+                  echo "${label}" >> "${failed}"
+                fi
+              done; then
+              break
+            fi
+            : > "${failed}"
+            attempt=$((attempt + 1))
+            sleep 10
+          done
+          sort -u "${failed}" -o "${failed}"
+          echo "held back: $(paste -sd' ' "${failed}")"
 
       - name: Clean previously mirrored add-ons
         run: |
@@ -136,11 +169,20 @@ jobs:
             "s|^image: homeassistant/|image: ${REG}/ha-apps/|"
 
       - name: Remove excluded add-ons
+        env:
+          FAILED_ADDONS_FILE: ${{ runner.temp }}/failed-addons.txt
         run: |
           set -euo pipefail
           for name in ${SKIP_ADDONS}; do
             rm -rf "./${name}"
           done
+          # add-ons whose images did not finish syncing stay out of the
+          # published tree until their images are pullable
+          if [ -f "${FAILED_ADDONS_FILE}" ]; then
+            while IFS= read -r name; do
+              [ -n "${name}" ] && rm -rf "./${name}"
+            done < "${FAILED_ADDONS_FILE}"
+          fi
 
       - name: Point .apps.yml images at TCR
         uses: jacobtomlinson/gha-find-replace@v3
@@ -151,10 +193,16 @@ jobs:
           include: ".apps.yml"
 
       - name: Drop excluded apps from .apps.yml
+        env:
+          FAILED_ADDONS_FILE: ${{ runner.temp }}/failed-addons.txt
         run: |
           python3 - <<'PY'
           import os
           skip = set(os.environ.get("SKIP_ADDONS", "").split())
+          fpath = os.environ.get("FAILED_ADDONS_FILE", "")
+          if fpath and os.path.exists(fpath):
+              with open(fpath, encoding="utf-8") as f:
+                  skip |= {line.strip() for line in f if line.strip()}
           path = ".apps.yml"
           with open(path, encoding="utf-8") as f:
               lines = f.read().splitlines(True)
