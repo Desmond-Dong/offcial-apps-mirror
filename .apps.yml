@@ -93,10 +93,6 @@ apps:
     repository: hassio-addons/app-jellyfin
     target: jellyfin
     image: ccr.ccs.tencentyun.com/hassio-addons/jellyfin
-  jupyterlab:
-    repository: hassio-addons/app-jupyterlab
-    target: jupyterlab
-    image: ccr.ccs.tencentyun.com/hassio-addons/jupyterlab
   lidarr:
     repository: hassio-addons/app-lidarr
     target: lidarr
