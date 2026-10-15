@@ -37,10 +37,6 @@ apps:
     repository: hassio-addons/app-bookstack
     target: bookstack
     image: ccr.ccs.tencentyun.com/hassio-addons/bookstack
-  calibre-web:
-    repository: hassio-addons/app-calibre-web
-    target: calibre-web
-    image: ccr.ccs.tencentyun.com/hassio-addons/calibre-web
   chrony:
     repository: hassio-addons/app-chrony
     target: chrony
