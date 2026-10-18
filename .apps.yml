@@ -97,6 +97,10 @@ apps:
     repository: hassio-addons/app-jupyterlab
     target: jupyterlab
     image: ccr.ccs.tencentyun.com/hassio-addons/jupyterlab
+  lidarr:
+    repository: hassio-addons/app-lidarr
+    target: lidarr
+    image: ccr.ccs.tencentyun.com/hassio-addons/lidarr
   mealie:
     repository: hassio-addons/app-mealie
     target: mealie
@@ -133,6 +137,10 @@ apps:
     repository: hassio-addons/app-nzbget
     target: nzbget
     image: ccr.ccs.tencentyun.com/hassio-addons/nzbget
+  overseerr:
+    repository: hassio-addons/app-seerr
+    target: seerr
+    image: ccr.ccs.tencentyun.com/hassio-addons/overseerr
   phpmyadmin:
     repository: hassio-addons/app-phpmyadmin
     target: phpmyadmin
@@ -169,10 +177,6 @@ apps:
     repository: hassio-addons/app-syncthing
     target: syncthing
     image: ccr.ccs.tencentyun.com/hassio-addons/syncthing
-  tailscale:
-    repository: hassio-addons/app-tailscale
-    target: tailscale
-    image: ccr.ccs.tencentyun.com/hassio-addons/tailscale
   tasmoadmin:
     repository: hassio-addons/app-tasmoadmin
     target: tasmoadmin
