@@ -177,6 +177,10 @@ apps:
     repository: hassio-addons/app-syncthing
     target: syncthing
     image: ccr.ccs.tencentyun.com/hassio-addons/syncthing
+  tailscale:
+    repository: hassio-addons/app-tailscale
+    target: tailscale
+    image: ccr.ccs.tencentyun.com/hassio-addons/tailscale
   tasmoadmin:
     repository: hassio-addons/app-tasmoadmin
     target: tasmoadmin
