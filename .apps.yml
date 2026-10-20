@@ -69,6 +69,10 @@ apps:
     repository: hassio-addons/app-ftp
     target: ftp
     image: ccr.ccs.tencentyun.com/hassio-addons/ftp
+  glances:
+    repository: hassio-addons/app-glances
+    target: glances
+    image: ccr.ccs.tencentyun.com/hassio-addons/glances
   grafana:
     repository: hassio-addons/app-grafana
     target: grafana
