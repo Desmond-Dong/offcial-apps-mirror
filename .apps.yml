@@ -117,10 +117,6 @@ apps:
     repository: hassio-addons/app-mqtt-io
     target: mqtt-io
     image: ccr.ccs.tencentyun.com/hassio-addons/mqtt-io
-  n8n:
-    repository: hassio-addons/app-n8n
-    target: n8n
-    image: ccr.ccs.tencentyun.com/hassio-addons/n8n
   node-red:
     repository: hassio-addons/app-node-red
     target: node-red
@@ -177,10 +173,6 @@ apps:
     repository: hassio-addons/app-syncthing
     target: syncthing
     image: ccr.ccs.tencentyun.com/hassio-addons/syncthing
-  tailscale:
-    repository: hassio-addons/app-tailscale
-    target: tailscale
-    image: ccr.ccs.tencentyun.com/hassio-addons/tailscale
   tasmoadmin:
     repository: hassio-addons/app-tasmoadmin
     target: tasmoadmin
