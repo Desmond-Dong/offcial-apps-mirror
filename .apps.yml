@@ -21,10 +21,6 @@ apps:
     repository: hassio-addons/app-appdaemon
     target: appdaemon
     image: ccr.ccs.tencentyun.com/hassio-addons/appdaemon
-  audiobookshelf:
-    repository: hassio-addons/app-audiobookshelf
-    target: audiobookshelf
-    image: ccr.ccs.tencentyun.com/hassio-addons/audiobookshelf
   bazarr:
     repository: hassio-addons/app-bazarr
     target: bazarr
@@ -121,10 +117,6 @@ apps:
     repository: hassio-addons/app-n8n
     target: n8n
     image: ccr.ccs.tencentyun.com/hassio-addons/n8n
-  node-red:
-    repository: hassio-addons/app-node-red
-    target: node-red
-    image: ccr.ccs.tencentyun.com/hassio-addons/node-red
   nginxproxymanager:
     repository: hassio-addons/app-nginx-proxy-manager
     target: proxy-manager
@@ -141,14 +133,6 @@ apps:
     repository: hassio-addons/app-seerr
     target: seerr
     image: ccr.ccs.tencentyun.com/hassio-addons/overseerr
-  phpmyadmin:
-    repository: hassio-addons/app-phpmyadmin
-    target: phpmyadmin
-    image: ccr.ccs.tencentyun.com/hassio-addons/phpmyadmin
-  plex:
-    repository: hassio-addons/app-plex
-    target: plex
-    image: ccr.ccs.tencentyun.com/hassio-addons/plex
   qbittorrent:
     repository: hassio-addons/app-qbittorrent
     target: qbittorrent
