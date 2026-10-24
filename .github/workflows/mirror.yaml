@@ -413,7 +413,9 @@ jobs:
     name: Sync ${{ matrix.addon.label }} to Tencent TCR
     needs: prepare
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # large images (esphome-dev, n8n, music_assistant_nightly ...) can take
+    # 40+ minutes to copy through TCR; 60 was cancelling them mid-transfer
+    timeout-minutes: 240
     if: needs.prepare.outputs.matrix != '[]'
     strategy:
       fail-fast: false
