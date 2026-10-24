@@ -652,14 +652,14 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-[addon-actual-budget]: https://github.com/hassio-addons/app-actual-budget/tree/v0.1.0
-[addon-doc-actual-budget]: https://github.com/hassio-addons/app-actual-budget/blob/v0.1.0/README.md
+[addon-actual-budget]: https://github.com/hassio-addons/app-actual-budget/tree/v0.2.0
+[addon-doc-actual-budget]: https://github.com/hassio-addons/app-actual-budget/blob/v0.2.0/README.md
 [actual-budget-issue]: https://github.com/hassio-addons/app-actual-budget/issues
-[actual-budget-version-shield]: https://img.shields.io/badge/version-v0.1.0-blue.svg
-[addon-adguard]: https://github.com/hassio-addons/app-adguard-home/tree/v6.3.0
-[addon-doc-adguard]: https://github.com/hassio-addons/app-adguard-home/blob/v6.3.0/README.md
+[actual-budget-version-shield]: https://img.shields.io/badge/version-v0.2.0-blue.svg
+[addon-adguard]: https://github.com/hassio-addons/app-adguard-home/tree/v6.3.1
+[addon-doc-adguard]: https://github.com/hassio-addons/app-adguard-home/blob/v6.3.1/README.md
 [adguard-issue]: https://github.com/hassio-addons/app-adguard-home/issues
-[adguard-version-shield]: https://img.shields.io/badge/version-v6.3.0-blue.svg
+[adguard-version-shield]: https://img.shields.io/badge/version-v6.3.1-blue.svg
 [addon-ssh]: https://github.com/hassio-addons/app-ssh/tree/v24.2.0
 [addon-doc-ssh]: https://github.com/hassio-addons/app-ssh/blob/v24.2.0/README.md
 [ssh-issue]: https://github.com/hassio-addons/app-ssh/issues
@@ -676,10 +676,10 @@ SOFTWARE.
 [addon-doc-appdaemon]: https://github.com/hassio-addons/app-appdaemon/blob/v0.19.2/README.md
 [appdaemon-issue]: https://github.com/hassio-addons/app-appdaemon/issues
 [appdaemon-version-shield]: https://img.shields.io/badge/version-v0.19.2-blue.svg
-[addon-audiobookshelf]: https://github.com/hassio-addons/app-audiobookshelf/tree/v0.2.1
-[addon-doc-audiobookshelf]: https://github.com/hassio-addons/app-audiobookshelf/blob/v0.2.1/README.md
+[addon-audiobookshelf]: https://github.com/hassio-addons/app-audiobookshelf/tree/v0.2.2
+[addon-doc-audiobookshelf]: https://github.com/hassio-addons/app-audiobookshelf/blob/v0.2.2/README.md
 [audiobookshelf-issue]: https://github.com/hassio-addons/app-audiobookshelf/issues
-[audiobookshelf-version-shield]: https://img.shields.io/badge/version-v0.2.1-blue.svg
+[audiobookshelf-version-shield]: https://img.shields.io/badge/version-v0.2.2-blue.svg
 [addon-bazarr]: https://github.com/hassio-addons/app-bazarr/tree/v0.7.0
 [addon-doc-bazarr]: https://github.com/hassio-addons/app-bazarr/blob/v0.7.0/README.md
 [bazarr-issue]: https://github.com/hassio-addons/app-bazarr/issues
@@ -724,10 +724,10 @@ SOFTWARE.
 [addon-doc-grafana]: https://github.com/hassio-addons/app-grafana/blob/v13.0.4/README.md
 [grafana-issue]: https://github.com/hassio-addons/app-grafana/issues
 [grafana-version-shield]: https://img.shields.io/badge/version-v13.0.4-blue.svg
-[addon-grocy]: https://github.com/hassio-addons/app-grocy/tree/v0.26.4
-[addon-doc-grocy]: https://github.com/hassio-addons/app-grocy/blob/v0.26.4/README.md
+[addon-grocy]: https://github.com/hassio-addons/app-grocy/tree/v0.26.5
+[addon-doc-grocy]: https://github.com/hassio-addons/app-grocy/blob/v0.26.5/README.md
 [grocy-issue]: https://github.com/hassio-addons/app-grocy/issues
-[grocy-version-shield]: https://img.shields.io/badge/version-v0.26.4-blue.svg
+[grocy-version-shield]: https://img.shields.io/badge/version-v0.26.5-blue.svg
 [addon-homebox]: https://github.com/hassio-addons/app-homebox/tree/v0.1.0
 [addon-doc-homebox]: https://github.com/hassio-addons/app-homebox/blob/v0.1.0/README.md
 [homebox-issue]: https://github.com/hassio-addons/app-homebox/issues
@@ -772,10 +772,10 @@ SOFTWARE.
 [addon-doc-nginxproxymanager]: https://github.com/hassio-addons/app-nginx-proxy-manager/blob/v4.1.1/README.md
 [nginxproxymanager-issue]: https://github.com/hassio-addons/app-nginx-proxy-manager/issues
 [nginxproxymanager-version-shield]: https://img.shields.io/badge/version-v4.1.1-blue.svg
-[addon-node-red]: https://github.com/hassio-addons/app-node-red/tree/v22.2.0
-[addon-doc-node-red]: https://github.com/hassio-addons/app-node-red/blob/v22.2.0/README.md
+[addon-node-red]: https://github.com/hassio-addons/app-node-red/tree/v22.2.1
+[addon-doc-node-red]: https://github.com/hassio-addons/app-node-red/blob/v22.2.1/README.md
 [node-red-issue]: https://github.com/hassio-addons/app-node-red/issues
-[node-red-version-shield]: https://img.shields.io/badge/version-v22.2.0-blue.svg
+[node-red-version-shield]: https://img.shields.io/badge/version-v22.2.1-blue.svg
 [addon-plex]: https://github.com/hassio-addons/app-plex/tree/v4.1.3
 [addon-doc-plex]: https://github.com/hassio-addons/app-plex/blob/v4.1.3/README.md
 [plex-issue]: https://github.com/hassio-addons/app-plex/issues
@@ -836,10 +836,10 @@ SOFTWARE.
 [addon-doc-tautulli]: https://github.com/hassio-addons/app-tautulli/blob/v6.1.2/README.md
 [tautulli-issue]: https://github.com/hassio-addons/app-tautulli/issues
 [tautulli-version-shield]: https://img.shields.io/badge/version-v6.1.2-blue.svg
-[addon-thelounge]: https://github.com/hassio-addons/app-thelounge/tree/v0.23.1
-[addon-doc-thelounge]: https://github.com/hassio-addons/app-thelounge/blob/v0.23.1/README.md
+[addon-thelounge]: https://github.com/hassio-addons/app-thelounge/tree/v0.23.2
+[addon-doc-thelounge]: https://github.com/hassio-addons/app-thelounge/blob/v0.23.2/README.md
 [thelounge-issue]: https://github.com/hassio-addons/app-thelounge/issues
-[thelounge-version-shield]: https://img.shields.io/badge/version-v0.23.1-blue.svg
+[thelounge-version-shield]: https://img.shields.io/badge/version-v0.23.2-blue.svg
 [addon-tor]: https://github.com/hassio-addons/app-tor/tree/v8.1.2
 [addon-doc-tor]: https://github.com/hassio-addons/app-tor/blob/v8.1.2/README.md
 [tor-issue]: https://github.com/hassio-addons/app-tor/issues
@@ -848,10 +848,10 @@ SOFTWARE.
 [addon-doc-traccar]: https://github.com/hassio-addons/app-traccar/blob/v0.27.0/README.md
 [traccar-issue]: https://github.com/hassio-addons/app-traccar/issues
 [traccar-version-shield]: https://img.shields.io/badge/version-v0.27.0-blue.svg
-[addon-unifi]: https://github.com/hassio-addons/app-unifi/tree/v5.3.1
-[addon-doc-unifi]: https://github.com/hassio-addons/app-unifi/blob/v5.3.1/README.md
+[addon-unifi]: https://github.com/hassio-addons/app-unifi/tree/v5.3.2
+[addon-doc-unifi]: https://github.com/hassio-addons/app-unifi/blob/v5.3.2/README.md
 [unifi-issue]: https://github.com/hassio-addons/app-unifi/issues
-[unifi-version-shield]: https://img.shields.io/badge/version-v5.3.1-blue.svg
+[unifi-version-shield]: https://img.shields.io/badge/version-v5.3.2-blue.svg
 [addon-uptime-kuma]: https://github.com/hassio-addons/app-uptime-kuma/tree/v0.19.4
 [addon-doc-uptime-kuma]: https://github.com/hassio-addons/app-uptime-kuma/blob/v0.19.4/README.md
 [uptime-kuma-issue]: https://github.com/hassio-addons/app-uptime-kuma/issues
@@ -872,10 +872,10 @@ SOFTWARE.
 [addon-doc-wireguard]: https://github.com/hassio-addons/app-wireguard/blob/v0.14.0/README.md
 [wireguard-issue]: https://github.com/hassio-addons/app-wireguard/issues
 [wireguard-version-shield]: https://img.shields.io/badge/version-v0.14.0-blue.svg
-[addon-zwave-js-ui]: https://github.com/hassio-addons/app-zwave-js-ui/tree/v7.8.0
-[addon-doc-zwave-js-ui]: https://github.com/hassio-addons/app-zwave-js-ui/blob/v7.8.0/README.md
+[addon-zwave-js-ui]: https://github.com/hassio-addons/app-zwave-js-ui/tree/v7.8.1
+[addon-doc-zwave-js-ui]: https://github.com/hassio-addons/app-zwave-js-ui/blob/v7.8.1/README.md
 [zwave-js-ui-issue]: https://github.com/hassio-addons/app-zwave-js-ui/issues
-[zwave-js-ui-version-shield]: https://img.shields.io/badge/version-v7.8.0-blue.svg
+[zwave-js-ui-version-shield]: https://img.shields.io/badge/version-v7.8.1-blue.svg
 [addon-zerotier]: https://github.com/hassio-addons/app-zerotier/tree/v0.26.2
 [addon-doc-zerotier]: https://github.com/hassio-addons/app-zerotier/blob/v0.26.2/README.md
 [zerotier-issue]: https://github.com/hassio-addons/app-zerotier/issues
