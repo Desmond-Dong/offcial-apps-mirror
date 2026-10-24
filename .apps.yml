@@ -109,14 +109,14 @@ apps:
     repository: hassio-addons/app-motioneye
     target: motioneye
     image: ccr.ccs.tencentyun.com/hassio-addons/motioneye
+  mqtt-explorer:
+    repository: hassio-addons/app-mqtt-explorer
+    target: mqtt-explorer
+    image: ccr.ccs.tencentyun.com/hassio-addons/mqtt-explorer
   mqtt-io:
     repository: hassio-addons/app-mqtt-io
     target: mqtt-io
     image: ccr.ccs.tencentyun.com/hassio-addons/mqtt-io
-  n8n:
-    repository: hassio-addons/app-n8n
-    target: n8n
-    image: ccr.ccs.tencentyun.com/hassio-addons/n8n
   node-red:
     repository: hassio-addons/app-node-red
     target: node-red
