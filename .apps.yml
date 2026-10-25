@@ -17,10 +17,6 @@ apps:
     repository: hassio-addons/app-airsonos
     target: airsonos
     image: ccr.ccs.tencentyun.com/hassio-addons/airsonos
-  appdaemon:
-    repository: hassio-addons/app-appdaemon
-    target: appdaemon
-    image: ccr.ccs.tencentyun.com/hassio-addons/appdaemon
   audiobookshelf:
     repository: hassio-addons/app-audiobookshelf
     target: audiobookshelf
@@ -81,10 +77,6 @@ apps:
     repository: hassio-addons/app-grocy
     target: grocy
     image: ccr.ccs.tencentyun.com/hassio-addons/grocy
-  homebox:
-    repository: hassio-addons/app-homebox
-    target: homebox
-    image: ccr.ccs.tencentyun.com/hassio-addons/homebox
   influxdb:
     repository: hassio-addons/app-influxdb
     target: influxdb
@@ -165,10 +157,6 @@ apps:
     repository: hassio-addons/app-spotify-connect
     target: spotify
     image: ccr.ccs.tencentyun.com/hassio-addons/spotify
-  spotweb:
-    repository: hassio-addons/app-spotweb
-    target: spotweb
-    image: ccr.ccs.tencentyun.com/hassio-addons/spotweb
   prowlarr:
     repository: hassio-addons/app-prowlarr
     target: prowlarr
@@ -181,10 +169,6 @@ apps:
     repository: hassio-addons/app-tailscale
     target: tailscale
     image: ccr.ccs.tencentyun.com/hassio-addons/tailscale
-  tasmoadmin:
-    repository: hassio-addons/app-tasmoadmin
-    target: tasmoadmin
-    image: ccr.ccs.tencentyun.com/hassio-addons/tasmoadmin
   tautulli:
     repository: hassio-addons/app-tautulli
     target: tautulli
