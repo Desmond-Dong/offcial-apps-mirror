@@ -181,10 +181,6 @@ apps:
     repository: hassio-addons/app-tailscale
     target: tailscale
     image: ccr.ccs.tencentyun.com/hassio-addons/tailscale
-  tasmoadmin:
-    repository: hassio-addons/app-tasmoadmin
-    target: tasmoadmin
-    image: ccr.ccs.tencentyun.com/hassio-addons/tasmoadmin
   tautulli:
     repository: hassio-addons/app-tautulli
     target: tautulli
