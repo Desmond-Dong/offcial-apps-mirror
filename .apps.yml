@@ -65,10 +65,6 @@ apps:
     repository: hassio-addons/app-freshrss
     target: freshrss
     image: ccr.ccs.tencentyun.com/hassio-addons/freshrss
-  ftp:
-    repository: hassio-addons/app-ftp
-    target: ftp
-    image: ccr.ccs.tencentyun.com/hassio-addons/ftp
   glances:
     repository: hassio-addons/app-glances
     target: glances
