@@ -65,6 +65,10 @@ apps:
     repository: hassio-addons/app-freshrss
     target: freshrss
     image: ccr.ccs.tencentyun.com/hassio-addons/freshrss
+  ftp:
+    repository: hassio-addons/app-ftp
+    target: ftp
+    image: ccr.ccs.tencentyun.com/hassio-addons/ftp
   glances:
     repository: hassio-addons/app-glances
     target: glances
@@ -213,6 +217,10 @@ apps:
     repository: hassio-addons/app-unifi
     target: unifi
     image: ccr.ccs.tencentyun.com/hassio-addons/unifi
+  uptime-kuma:
+    repository: hassio-addons/app-uptime-kuma
+    target: uptime-kuma
+    image: ccr.ccs.tencentyun.com/hassio-addons/uptime-kuma
   victoriametrics:
     repository: hassio-addons/app-victoriametrics
     target: victoriametrics
