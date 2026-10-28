@@ -233,10 +233,6 @@ apps:
     repository: hassio-addons/app-whisparr
     target: whisparr
     image: ccr.ccs.tencentyun.com/hassio-addons/whisparr
-  wireguard:
-    repository: hassio-addons/app-wireguard
-    target: wireguard
-    image: ccr.ccs.tencentyun.com/hassio-addons/wireguard
   zerotier:
     repository: hassio-addons/app-zerotier
     target: zerotier
