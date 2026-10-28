@@ -201,10 +201,6 @@ apps:
     repository: hassio-addons/app-ssh
     target: ssh
     image: ccr.ccs.tencentyun.com/hassio-addons/ssh
-  sqlite-web:
-    repository: hassio-addons/app-sqlite-web
-    target: sqlite-web
-    image: ccr.ccs.tencentyun.com/hassio-addons/sqlite-web
   stirling-pdf:
     repository: hassio-addons/app-stirling-pdf
     target: stirling-pdf
@@ -233,6 +229,10 @@ apps:
     repository: hassio-addons/app-whisparr
     target: whisparr
     image: ccr.ccs.tencentyun.com/hassio-addons/whisparr
+  wireguard:
+    repository: hassio-addons/app-wireguard
+    target: wireguard
+    image: ccr.ccs.tencentyun.com/hassio-addons/wireguard
   zerotier:
     repository: hassio-addons/app-zerotier
     target: zerotier
