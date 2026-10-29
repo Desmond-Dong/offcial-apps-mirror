@@ -430,12 +430,25 @@ jobs:
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           REG="$(printf '%s' "${ACR_REGISTRY}" | tr -d '[:space:]')"
           ACR_USER="$(printf '%s' "${ACR_USERNAME}" | tr -d '[:space:]')"
           PASS="$(printf '%s' "${ACR_PASSWORD}" | tr -d '[:space:]')"
-          printf '%s' "${PASS}" | docker login "${REG}" --username "${ACR_USER}" --password-stdin
-          echo "logged in to ${REG}"
+          # the registry ping occasionally times out on hosted runners
+          # ("Client.Timeout exceeded while awaiting headers"); retry instead of
+          # failing the whole add-on for a transient network hiccup
+          attempt=1
+          while [ "${attempt}" -le 5 ]; do
+            if printf '%s' "${PASS}" | docker login "${REG}" --username "${ACR_USER}" --password-stdin; then
+              echo "logged in to ${REG}"
+              exit 0
+            fi
+            echo "login attempt ${attempt} failed, retrying"
+            attempt=$((attempt + 1))
+            sleep $((attempt * 5))
+          done
+          echo "::error::could not log in to ${REG} after 5 attempts"
+          exit 1
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -546,7 +559,7 @@ jobs:
             # so the docker.io source connection can no longer be starved by
             # the slow registry upload.
             local attempt=1
-            while [ "${attempt}" -le 2 ]; do
+            while [ "${attempt}" -le 3 ]; do
               if docker run --rm -v "${stage}:/stage" quay.io/skopeo/stable copy \
                   "${override[@]}" \
                   "${src_creds[@]}" \
@@ -562,7 +575,7 @@ jobs:
               fi
               echo "copy attempt ${attempt} failed for ${dst}, retrying"
               attempt=$((attempt + 1))
-              sleep 10
+              sleep $((attempt * 15))
             done
             sudo rm -rf "${stage}"
             return 1
