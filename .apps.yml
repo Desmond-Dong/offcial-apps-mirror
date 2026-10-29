@@ -201,6 +201,10 @@ apps:
     repository: hassio-addons/app-ssh
     target: ssh
     image: ccr.ccs.tencentyun.com/hassio-addons/ssh
+  sqlite-web:
+    repository: hassio-addons/app-sqlite-web
+    target: sqlite-web
+    image: ccr.ccs.tencentyun.com/hassio-addons/sqlite-web
   stirling-pdf:
     repository: hassio-addons/app-stirling-pdf
     target: stirling-pdf
