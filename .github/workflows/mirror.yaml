@@ -433,31 +433,40 @@ jobs:
       matrix:
         addon: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
-      - name: Log in to Tencent TCR
+      - name: Write TCR credentials to the Docker config
         env:
           ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
-          set -uo pipefail
+          set -euo pipefail
+          # docker login pings the registry through the daemon with a hard
+          # 15s timeout, and that ping is what kept timing out on hosted
+          # runners ("Client.Timeout exceeded while awaiting headers").
+          # buildx only reads ~/.docker/config.json, so write the auth entry
+          # directly: no network involved, nothing to time out.
           REG="$(printf '%s' "${ACR_REGISTRY}" | tr -d '[:space:]')"
           ACR_USER="$(printf '%s' "${ACR_USERNAME}" | tr -d '[:space:]')"
-          PASS="$(printf '%s' "${ACR_PASSWORD}" | tr -d '[:space:]')"
-          # the registry ping occasionally times out on hosted runners
-          # ("Client.Timeout exceeded while awaiting headers"); retry instead of
-          # failing the whole add-on for a transient network hiccup
-          attempt=1
-          while [ "${attempt}" -le 5 ]; do
-            if printf '%s' "${PASS}" | docker login "${REG}" --username "${ACR_USER}" --password-stdin; then
-              echo "logged in to ${REG}"
-              exit 0
-            fi
-            echo "login attempt ${attempt} failed, retrying"
-            attempt=$((attempt + 1))
-            sleep $((attempt * 5))
-          done
-          echo "::error::could not log in to ${REG} after 5 attempts"
-          exit 1
+          export ACR_PASSWORD
+          mkdir -p "${HOME}/.docker"
+          python3 - "${REG}" "${ACR_USER}" <<'PY'
+          import base64, json, os, sys
+
+          reg, user = sys.argv[1], sys.argv[2]
+          password = os.environ["ACR_PASSWORD"].strip()
+          path = os.path.expanduser("~/.docker/config.json")
+          try:
+              with open(path, encoding="utf-8") as f:
+                  cfg = json.load(f)
+          except (OSError, ValueError):
+              cfg = {}
+          cfg.setdefault("auths", {})[reg] = {
+              "auth": base64.b64encode(f"{user}:{password}".encode()).decode(),
+          }
+          with open(path, "w", encoding="utf-8") as f:
+              json.dump(cfg, f)
+          print(f"credentials written for {reg}")
+          PY
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
