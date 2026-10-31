@@ -28,10 +28,10 @@ init: false
 startup: services
 name: ESPHome Device Builder (dev)
 panel_title: ESPHome Builder (dev)
-version: 2026.11.0-dev20261030
+version: 2026.11.0-dev20261031
 slug: esphome-dev
 description: Development version of ESPHome Device Builder
-image: ccr.ccs.tencentyun.com/esphome/esphome-hassio
+image: hkccr.ccs.tencentyun.com/esp-mirror/esphome-hassio
 stage: experimental
 options:
   home_assistant_dashboard_integration: false

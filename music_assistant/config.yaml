@@ -33,7 +33,7 @@ backup_exclude:
   - .cache/*
   - library.db.backup
 stage: stable
-image: ccr.ccs.tencentyun.com/music-assistant/server
+image: hkccr.ccs.tencentyun.com/ma-mirror/server
 tmpfs: true
 options:
   log_level: info

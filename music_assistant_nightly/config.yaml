@@ -1,5 +1,5 @@
 name: Music Assistant (NIGHTLY)
-version: 2.11.0.dev2026103004
+version: 2.11.0.dev2026103104
 slug: music_assistant_nightly
 description: NIGHTLY version of Music Assistant.
   Install this version if you want to keep up with the latest bleeding edge development of Music Assistant!
@@ -32,7 +32,7 @@ backup_exclude:
   - .cache/*
   - library.db.backup
 stage: experimental
-image: ccr.ccs.tencentyun.com/music-assistant/server
+image: hkccr.ccs.tencentyun.com/ma-mirror/server
 tmpfs: true
 options:
   log_level: info

@@ -31,4 +31,4 @@ version: 2026.10.1
 slug: esphome
 description: Build your own smart home devices using ESPHome, no programming experience
   required
-image: ccr.ccs.tencentyun.com/esphome/esphome-hassio
+image: hkccr.ccs.tencentyun.com/esp-mirror/esphome-hassio
