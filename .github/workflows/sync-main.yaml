@@ -1,5 +1,5 @@
 ---
-name: Mirror upstream repository
+name: Sync images (main registry)
 
 # yamllint disable-line rule:truthy
 on:
@@ -14,243 +14,23 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
   actions: read
 
 concurrency:
-  group: mirror-upstream
+  group: sync-main
   cancel-in-progress: false
 
 env:
   # Order matters: home-assistant/addons is processed first so official
-  # add-ons always keep their original names; every other upstream that
+  # add-ons always keep their original names; any hassio-addons add-on that
   # hits an existing directory gets a numeric suffix on directory + slug.
-  UPSTREAM_REPOSITORIES: "home-assistant/addons hassio-addons/repository esphome/home-assistant-addon music-assistant/home-assistant-addon"
+  UPSTREAM_REPOSITORIES: "home-assistant/addons hassio-addons/repository"
   SKIP_ADDONS: "tor netease_cloud_music_api"
-  # secrets hold the Tencent TCR personal registry credentials
+  # ACR_REGISTRY is the main Tencent TCR personal registry
   ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
-  # HK personal registry (hkccr.ccs.tencentyun.com) hosts esphome and
-  # music-assistant; same account credentials as the main registry
-  ACR_REGISTRY_HK: ${{ secrets.ACR_REGISTRY_HK }}
-  REPO_NAME: Home Assistant Community Apps (Mirror)
-  REPO_URL: https://github.com/Desmond-Dong/offcial-apps-mirror
-  REPO_MAINTAINER: Desmond-Dong
 
 jobs:
-  # The repository tree is published after the image sync completes. An add-on
-  # whose images failed to sync keeps the version that was published last run
-  # (restored from git) instead of being dropped from the store; the next run
-  # retries it.
-  mirror:
-    name: Mirror repository files
-    needs: sync-images
-    if: always() && needs.sync-images.result != 'skipped'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          ref: main
-
-      - name: Collect add-ons whose images failed to sync
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          failed="${RUNNER_TEMP}/failed-addons.txt"
-          : > "${failed}"
-          # retry: a transient GitHub API failure must not block publishing
-          attempt=1
-          while [ "${attempt}" -le 3 ]; do
-            if gh api \
-              "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" \
-              --paginate \
-              --jq '.jobs[] | select(.name | startswith("Sync ")) | "\(.name)\t\(.conclusion // .status)"' \
-            | while IFS=$'\t' read -r name status; do
-                label="${name#Sync }"
-                label="${label% to Tencent TCR}"
-                if [ "${status}" != "success" ]; then
-                  echo "${label}" >> "${failed}"
-                fi
-              done; then
-              break
-            fi
-            : > "${failed}"
-            attempt=$((attempt + 1))
-            sleep 10
-          done
-          sort -u "${failed}" -o "${failed}"
-          echo "held back: $(paste -sd' ' "${failed}")"
-
-      - name: Clean previously mirrored add-ons
-        run: |
-          set -euo pipefail
-          # Start from a clean managed set every run: the checkout contains
-          # last run's tree, and stale directories would otherwise win name
-          # collisions or hide upstream deletions
-          for d in */; do
-            if [ -f "${d}config.yaml" ] || [ -f "${d}config.json" ]; then
-              rm -rf "${d}"
-            fi
-          done
-
-      # Copy order decides name ownership: home-assistant/addons is first so
-      # official add-ons always keep their original names; any other upstream
-      # that collides gets a numeric suffix on directory + slug. Image
-      # rewrites are applied afterwards, scoped to each upstream's own
-      # directory list, so no replace step can touch another origin's files.
-      - name: Mirror add-ons from upstreams
-        run: |
-          set -euo pipefail
-          : > "${RUNNER_TEMP}/dirs-official.txt"
-          : > "${RUNNER_TEMP}/dirs-hassio.txt"
-          : > "${RUNNER_TEMP}/dirs-esphome.txt"
-          : > "${RUNNER_TEMP}/dirs-music.txt"
-          for repo in ${UPSTREAM_REPOSITORIES}; do
-            case "${repo}" in
-              home-assistant/addons) list="${RUNNER_TEMP}/dirs-official.txt" ;;
-              hassio-addons/repository) list="${RUNNER_TEMP}/dirs-hassio.txt" ;;
-              esphome/home-assistant-addon) list="${RUNNER_TEMP}/dirs-esphome.txt" ;;
-              music-assistant/home-assistant-addon) list="${RUNNER_TEMP}/dirs-music.txt" ;;
-              *) continue ;;
-            esac
-            dest="${RUNNER_TEMP}/upstream-${repo%%/*}"
-            git clone --depth 1 --quiet "https://github.com/${repo}.git" "${dest}"
-            for d in "${dest}"/*/; do
-              d="${d%/}"
-              name="$(basename "${d}")"
-              if [ ! -f "${d}/config.yaml" ]; then
-                continue
-              fi
-              target="${name}"
-              if [ -e "./${target}" ]; then
-                if [ "${repo}" = "home-assistant/addons" ]; then
-                  echo "::warning::official ${name} shadows an existing directory, skipping"
-                  continue
-                fi
-                try=2
-                while [ -e "./${target}${try}" ]; do
-                  try=$((try + 1))
-                done
-                target="${name}${try}"
-                echo "renamed ${repo}/${name} -> ${target} (name collision)"
-              fi
-              rsync -a --delete "${d}/" "./${target}/"
-              if [ "${target}" != "${name}" ]; then
-                sed -i "s/^slug:.*/slug: ${target}/" "./${target}/config.yaml"
-              fi
-              echo "${target}" >> "${list}"
-            done
-            # hassio-addons repository metadata reused by later steps
-            if [ "${repo}" = "hassio-addons/repository" ]; then
-              [ -f "${dest}/.apps.yml" ] && cp "${dest}/.apps.yml" ./.apps.yml
-              [ -f "${dest}/README.md" ] && cp "${dest}/README.md" ./README.md
-            fi
-          done
-
-      - name: Point image references at registry per upstream
-        env:
-          REG: "${{ env.ACR_REGISTRY }}"
-        run: |
-          set -euo pipefail
-          rewrite() {
-            while IFS= read -r d; do
-              [ -n "${d}" ] || continue
-              sed -i "$2" "./${d}/config.yaml"
-            done < "$1"
-          }
-          # hassio-addons: swap the ghcr host and turn the trailing /{arch}
-          # placeholder into the -{arch} suffix the supervisor resolves
-          rewrite "${RUNNER_TEMP}/dirs-hassio.txt" \
-            "s|ghcr.io/hassio-addons/|${REG}/hassio-addons/|g; s|/{arch}|-{arch}|g"
-          rewrite "${RUNNER_TEMP}/dirs-esphome.txt" \
-            "s|ghcr.io/esphome/|${ACR_REGISTRY_HK}/esp-mirror/|g"
-          rewrite "${RUNNER_TEMP}/dirs-music.txt" \
-            "s|ghcr.io/music-assistant/|${ACR_REGISTRY_HK}/ma-mirror/|g"
-          # official core add-ons use the supervisor alias homeassistant/
-          rewrite "${RUNNER_TEMP}/dirs-official.txt" \
-            "s|^image: homeassistant/|image: ${REG}/ha-apps/|"
-
-      - name: Remove excluded add-ons and keep previous versions
-        env:
-          FAILED_ADDONS_FILE: ${{ runner.temp }}/failed-addons.txt
-        run: |
-          set -euo pipefail
-          for name in ${SKIP_ADDONS}; do
-            rm -rf "./${name}"
-          done
-          # an add-on whose images did not finish syncing must not disappear
-          # from the store: put back the version published last run, so users
-          # keep a working (older) add-on until the retry succeeds
-          if [ -f "${FAILED_ADDONS_FILE}" ]; then
-            while IFS= read -r name; do
-              [ -n "${name}" ] || continue
-              if git cat-file -e "HEAD:${name}/config.yaml" 2>/dev/null; then
-                rm -rf "./${name}"
-                git checkout HEAD -- "${name}"
-                echo "kept previous version of ${name}"
-              else
-                echo "::warning::${name}: sync failed and no previous version exists, omitting"
-                rm -rf "./${name}"
-              fi
-            done < "${FAILED_ADDONS_FILE}"
-          fi
-
-      - name: Point .apps.yml images at TCR
-        uses: jacobtomlinson/gha-find-replace@v3
-        with:
-          find: "ghcr.io/hassio-addons/"
-          replace: "${{ env.ACR_REGISTRY }}/hassio-addons/"
-          regex: false
-          include: ".apps.yml"
-
-      - name: Drop unpublished apps from .apps.yml
-        run: |
-          python3 - <<'PY'
-          import os
-          # keep only entries that are actually published in this tree: an app
-          # restored to its previous version stays listed, a skipped or never
-          # published one is dropped
-          present = {
-              d for d in os.listdir(".")
-              if os.path.exists(os.path.join(d, "config.yaml"))
-          }
-          path = ".apps.yml"
-          with open(path, encoding="utf-8") as f:
-              lines = f.read().splitlines(True)
-          out, drop = [], False
-          for line in lines:
-              if line and not line[0].isspace():
-                  drop = False
-              elif line.startswith("  ") and not line.startswith("    "):
-                  drop = line.strip().rstrip(":") not in present
-              if not drop:
-                  out.append(line)
-          with open(path, "w", encoding="utf-8") as f:
-              f.write("".join(out))
-          PY
-
-      - name: Point README at this repository
-        uses: jacobtomlinson/gha-find-replace@v3
-        with:
-          find: "https://github.com/hassio-addons/repository"
-          replace: "https://github.com/Desmond-Dong/offcial-apps-mirror"
-          regex: false
-          include: "README.md"
-
-      - name: Write repository.json
-        run: |
-          jq -n \
-            --arg name "$REPO_NAME" \
-            --arg url "$REPO_URL" \
-            --arg maintainer "$REPO_MAINTAINER" \
-            '{name: $name, url: $url, maintainer: $maintainer}' > repository.json
-
-      - name: Commit and push
-        uses: stefanzweifel/git-auto-commit-action@v7
-        with:
-          commit_message: "chore: sync upstream repository"
-
   prepare:
     name: Prepare sync list
     runs-on: ubuntu-latest
@@ -260,11 +40,11 @@ jobs:
       - name: Build sync list from upstream configs
         id: list
         env:
-          UPSTREAMS: "home-assistant/addons hassio-addons/repository esphome/home-assistant-addon music-assistant/home-assistant-addon"
+          UPSTREAMS: "home-assistant/addons hassio-addons/repository"
         run: |
           set -euo pipefail
-          # Mirror the mirror job's name allocation: first upstream to claim a
-          # directory name keeps it (official goes first and is never
+          # Mirror the publish job's name allocation: first upstream to claim
+          # a directory name keeps it (official goes first and is never
           # renamed); later colliding add-ons get a numeric suffix
           declare -A claimed=()
           # Sets CLAIMED and returns 0, or returns 1 when an official add-on
@@ -316,16 +96,10 @@ jobs:
               fi
               seen="${seen}${final_name} "
 
-              # per-upstream registry namespace and target registry: esphome
-              # and music-assistant live in the HK registry. reg is an alias
-              # ('main'|'hk') - a secret-resolved host here would make GitHub
-              # refuse the whole matrix output ("may contain secret")
+              # per-upstream registry namespace
               case "${repo}" in
-                home-assistant/addons)                ns="ha-apps";       reg="main" ;;
-                hassio-addons/repository)             ns="hassio-addons"; reg="main" ;;
-                esphome/home-assistant-addon)         ns="esp-mirror";    reg="hk" ;;
-                music-assistant/home-assistant-addon) ns="ma-mirror";     reg="hk" ;;
-                *)                                    ns="hassioapps";    reg="main" ;;
+                home-assistant/addons) ns="ha-apps" ;;
+                *) ns="hassio-addons" ;;
               esac
 
               # no registry host (official core "homeassistant/..." and plain
@@ -353,12 +127,12 @@ jobs:
                     echo "::warning::${final_name}: arch image without arch list, skipping"
                     continue
                   fi
-                  rows+=("${path}"$'\t'"${version}"$'\t'"${image}"$'\t'"${final_name}"$'\t'"arch"$'\t'"${arches}"$'\t'"${ns}"$'\t'"${reg}")
+                  rows+=("${path}"$'\t'"${version}"$'\t'"${image}"$'\t'"${final_name}"$'\t'"arch"$'\t'"${arches}"$'\t'"${ns}")
                 ;;
                 *)
                   name="${index_image##*/}"
                   src="${index_image}"
-                  rows+=("${name}"$'\t'"${version}"$'\t'"${src}"$'\t'"${final_name}"$'\t'"index"$'\t'"[]"$'\t'"${ns}"$'\t'"${reg}")
+                  rows+=("${name}"$'\t'"${version}"$'\t'"${src}"$'\t'"${final_name}"$'\t'"index"$'\t'"[]"$'\t'"${ns}")
                 ;;
               esac
             done
@@ -367,7 +141,7 @@ jobs:
             split("\n")
             | map(select(length > 0) | split("\t") |
                 {name: .[0], version: .[1], src: .[2], label: .[3],
-                 mode: .[4], arches: (.[5] | fromjson), ns: .[6], reg: .[7]})
+                 mode: .[4], arches: (.[5] | fromjson), ns: .[6]})
           ')"
           echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
           printf '%s' "${matrix}" > "${RUNNER_TEMP}/matrix.json"
@@ -396,37 +170,31 @@ jobs:
               matrix = json.load(f)
 
           cred = credential.Credential(os.environ["TENCENT_SECRET_ID"], os.environ["TENCENT_SECRET_KEY"])
-          # one client per registry region, keyed by the matrix's reg alias
-          clients = {
-              "main": tcr_client.TcrClient(cred, "ap-guangzhou"),
-              "hk": tcr_client.TcrClient(cred, "ap-hongkong"),
-          }
+          client = tcr_client.TcrClient(cred, "ap-guangzhou")
 
-          repos = {}
+          repos = set()
           for item in matrix:
-              ns, reg = item["ns"], item["reg"]
+              ns = item["ns"]
               if item["mode"] == "arch":
                   for arch in item["arches"]:
-                      repos.setdefault(reg, set()).add(f"{ns}/" + item["name"].replace("{arch}", arch))
+                      repos.add(f"{ns}/" + item["name"].replace("{arch}", arch))
               else:
-                  repos.setdefault(reg, set()).add(f"{ns}/{item['name']}")
+                  repos.add(f"{ns}/{item['name']}")
 
           created = skipped = 0
-          for reg in sorted(repos):
-              client = clients[reg]
-              for repo in sorted(repos[reg]):
-                  req = models.CreateRepositoryPersonalRequest()
-                  req.RepoName = repo
-                  req.Public = 1  # 1=public: anonymous pull from the moment images land
-                  req.Description = "Home Assistant Community Apps (Mirror)"
-                  try:
-                      client.CreateRepositoryPersonal(req)
-                      created += 1
-                  except TencentCloudSDKException as exc:
-                      # already-existing repositories are left untouched here;
-                      # the post-sync step flips any that are still private
-                      print(f"note: {reg}/{repo}: {exc}")
-                      skipped += 1
+          for repo in sorted(repos):
+              req = models.CreateRepositoryPersonalRequest()
+              req.RepoName = repo
+              req.Public = 1  # 1=public: anonymous pull from the moment images land
+              req.Description = "Home Assistant Community Apps (Mirror)"
+              try:
+                  client.CreateRepositoryPersonal(req)
+                  created += 1
+              except TencentCloudSDKException as exc:
+                  # already-existing repositories are left untouched here;
+                  # the post-sync step flips any that are still private
+                  print(f"note: {repo}: {exc}")
+                  skipped += 1
           print(f"pre-created {created} public repositories, {skipped} already existed or skipped")
           PY
 
@@ -434,13 +202,13 @@ jobs:
     name: Sync ${{ matrix.addon.label }} to Tencent TCR
     needs: prepare
     runs-on: ubuntu-latest
-    # large images (esphome-dev, n8n, music_assistant_nightly ...) can take
-    # 40+ minutes to copy through TCR; 60 was cancelling them mid-transfer
+    # large images (n8n, grafana ...) can take 40+ minutes to copy through
+    # TCR; 60 was cancelling them mid-transfer
     timeout-minutes: 240
     if: needs.prepare.outputs.matrix != '[]'
     strategy:
       fail-fast: false
-      # Tencent TCR personal edition allows at most 10 concurrent syncs
+      # Tencent TCR personal edition rate limits concurrent syncs
       max-parallel: 10
       matrix:
         addon: ${{ fromJson(needs.prepare.outputs.matrix) }}
@@ -459,13 +227,12 @@ jobs:
           # directly: no network involved, nothing to time out.
           REG="$(printf '%s' "${ACR_REGISTRY}" | tr -d '[:space:]')"
           ACR_USER="$(printf '%s' "${ACR_USERNAME}" | tr -d '[:space:]')"
-          REG_HK="$(printf '%s' "${ACR_REGISTRY_HK}" | tr -d '[:space:]')"
           export ACR_PASSWORD
           mkdir -p "${HOME}/.docker"
-          python3 - "${REG}" "${REG_HK}" "${ACR_USER}" <<'PY'
+          python3 - "${REG}" "${ACR_USER}" <<'PY'
           import base64, json, os, sys
 
-          main_reg, hk_reg, user = sys.argv[1], sys.argv[2], sys.argv[3]
+          reg, user = sys.argv[1], sys.argv[2]
           password = os.environ["ACR_PASSWORD"].strip()
           path = os.path.expanduser("~/.docker/config.json")
           try:
@@ -473,14 +240,12 @@ jobs:
                   cfg = json.load(f)
           except (OSError, ValueError):
               cfg = {}
-          auth = {"auth": base64.b64encode(f"{user}:{password}".encode()).decode()}
-          # same account works for both personal registries
-          cfg.setdefault("auths", {})[main_reg] = dict(auth)
-          if hk_reg:
-              cfg["auths"][hk_reg] = dict(auth)
+          cfg.setdefault("auths", {})[reg] = {
+              "auth": base64.b64encode(f"{user}:{password}".encode()).decode(),
+          }
           with open(path, "w", encoding="utf-8") as f:
               json.dump(cfg, f)
-          print(f"credentials written for {main_reg}" + (f" and {hk_reg}" if hk_reg else ""))
+          print(f"credentials written for {reg}")
           PY
 
       - name: Set up Docker Buildx
@@ -495,7 +260,6 @@ jobs:
           MODE: ${{ matrix.addon.mode }}
           ARCHES: ${{ toJson(matrix.addon.arches) }}
           NS: ${{ matrix.addon.ns }}
-          ADDON_REG: ${{ matrix.addon.reg }}
           FORCE: ${{ inputs.force_sync || false }}
           DRY_RUN: "false"
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
@@ -505,13 +269,7 @@ jobs:
         run: |
           set -uo pipefail
 
-          # ADDON_REG is a registry alias ('main'|'hk'); resolve the host here
-          # so no secret value ever lands in the prepare job's matrix output
-          case "${ADDON_REG}" in
-            hk) REG_HOST="${ACR_REGISTRY_HK}" ;;
-            *)  REG_HOST="${ACR_REGISTRY}" ;;
-          esac
-          PREFIX="${REG_HOST}/${NS}"
+          PREFIX="${ACR_REGISTRY}/${NS}"
           REPOS="repos.txt"
           : > "${REPOS}"
 
@@ -708,7 +466,6 @@ jobs:
           TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
           TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
           NS: ${{ matrix.addon.ns }}
-          ADDON_REG: ${{ matrix.addon.reg }}
         run: |
           set -euo pipefail
           if [ -z "${TENCENT_SECRET_ID}" ] || [ -z "${TENCENT_SECRET_KEY}" ]; then
@@ -725,8 +482,7 @@ jobs:
 
           repos = sorted({line.strip() for line in open("repos.txt", encoding="utf-8") if line.strip()})
           cred = credential.Credential(os.environ["TENCENT_SECRET_ID"], os.environ["TENCENT_SECRET_KEY"])
-          region = "ap-hongkong" if os.environ["ADDON_REG"] == "hk" else "ap-guangzhou"
-          client = tcr_client.TcrClient(cred, region)
+          client = tcr_client.TcrClient(cred, "ap-guangzhou")
 
           failed = []
           for repo in repos:

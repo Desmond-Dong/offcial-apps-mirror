@@ -1,0 +1,500 @@
+---
+name: Sync images (HK registry)
+
+# yamllint disable-line rule:truthy
+on:
+  schedule:
+    - cron: "43 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      force_sync:
+        description: Force re-sync all images, ignoring tags already in the registry
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: sync-hk
+  cancel-in-progress: false
+
+env:
+  # Order matters: esphome is processed first, music-assistant second; any
+  # add-on that hits an existing directory gets a numeric suffix.
+  UPSTREAM_REPOSITORIES: "esphome/home-assistant-addon music-assistant/home-assistant-addon"
+  SKIP_ADDONS: ""
+  # The HK personal registry (hkccr.ccs.tencentyun.com) hosts esphome and
+  # music-assistant; same account credentials as the main registry. Keeping
+  # the env name ACR_REGISTRY lets every job script stay identical to the
+  # sync-main workflow.
+  ACR_REGISTRY: ${{ secrets.ACR_REGISTRY_HK }}
+
+jobs:
+  prepare:
+    name: Prepare sync list
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - name: Build sync list from upstream configs
+        id: list
+        env:
+          UPSTREAMS: "esphome/home-assistant-addon music-assistant/home-assistant-addon"
+        run: |
+          set -euo pipefail
+          # Mirror the publish job's name allocation: first upstream to claim
+          # a directory name keeps it; later colliding add-ons get a numeric
+          # suffix
+          declare -A claimed=()
+          # Sets CLAIMED and returns 0
+          claim_name() {
+            local repo="$1" dir="$2" try=2 cand="${2}"
+            if [ -z "${claimed[${cand}]:-}" ]; then
+              claimed[${cand}]="${repo}"
+              CLAIMED="${cand}"
+              return 0
+            fi
+            while :; do
+              cand="${dir}${try}"
+              if [ -z "${claimed[${cand}]:-}" ]; then
+                claimed[${cand}]="${repo}"
+                CLAIMED="${cand}"
+                return 0
+              fi
+              try=$((try + 1))
+            done
+          }
+          seen=""
+          rows=()
+          for repo in ${UPSTREAMS}; do
+            dest="${RUNNER_TEMP}/up-${repo%%/*}"
+            git clone --depth 1 --quiet "https://github.com/${repo}.git" "${dest}"
+            for d in "${dest}"/*/; do
+              d="${d%/}"
+              cfg="${d}/config.yaml"
+              [ -f "${cfg}" ] || continue
+              dir_name="$(basename "${d}")"
+
+              claim_name "${repo}" "${dir_name}"
+              final_name="${CLAIMED}"
+              case " ${SKIP_ADDONS} " in *" ${final_name} "*) continue ;; esac
+              case "${seen} " in *" ${final_name} "*) continue ;; esac
+
+              version="$(awk '/^version:/{print $2; exit}' "${cfg}" | tr -d "\"'")"
+              image="$(awk '/^image:/{print $2; exit}' "${cfg}" | tr -d "\"'")"
+              if [ -z "${version}" ] || [ -z "${image}" ]; then
+                echo "::warning::${final_name}: config has no version or no image, skipping"
+                continue
+              fi
+              seen="${seen}${final_name} "
+
+              # per-upstream registry namespace
+              case "${repo}" in
+                esphome/home-assistant-addon) ns="esp-mirror" ;;
+                *) ns="ma-mirror" ;;
+              esac
+
+              # no registry host (official core "homeassistant/..." and plain
+              # docker hub images) -> docker.io
+              case "${image%%/*}" in
+                *.*) ;;
+                *) image="docker.io/${image}" ;;
+              esac
+
+              # a trailing /{arch} placeholder (or no placeholder at all) means
+              # the plain tag carries every platform (mode=index); an {arch}
+              # left inside the path means one image per architecture
+              # (mode=arch, official core add-ons)
+              index_image="${image%%/\{arch\}}"
+              case "${index_image}" in
+                *"{arch}"*)
+                  path="${index_image#*/}"
+                  path="${path#*/}"
+                  arches="$(awk '
+                    /^arch:/ { f=1; next }
+                    f && /^[ \t]*- / { sub(/^[ \t]*- /, ""); print; next }
+                    f && !/^[ \t]*$/ { f=0 }
+                  ' "${cfg}" | jq -R -s -c 'split("\n") | map(select(length > 0))')"
+                  if [ -z "${arches}" ] || [ "${arches}" = "[]" ]; then
+                    echo "::warning::${final_name}: arch image without arch list, skipping"
+                    continue
+                  fi
+                  rows+=("${path}"$'\t'"${version}"$'\t'"${image}"$'\t'"${final_name}"$'\t'"arch"$'\t'"${arches}"$'\t'"${ns}")
+                ;;
+                *)
+                  name="${index_image##*/}"
+                  src="${index_image}"
+                  rows+=("${name}"$'\t'"${version}"$'\t'"${src}"$'\t'"${final_name}"$'\t'"index"$'\t'"[]"$'\t'"${ns}")
+                ;;
+              esac
+            done
+          done
+          matrix="$(printf '%s\n' "${rows[@]}" | jq -c -R -s '
+            split("\n")
+            | map(select(length > 0) | split("\t") |
+                {name: .[0], version: .[1], src: .[2], label: .[3],
+                 mode: .[4], arches: (.[5] | fromjson), ns: .[6]})
+          ')"
+          echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
+          printf '%s' "${matrix}" > "${RUNNER_TEMP}/matrix.json"
+          echo "will sync $(jq 'length' <<<"${matrix}") add-ons"
+
+      - name: Pre-create repositories as public
+        env:
+          TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TENCENT_SECRET_ID}" ] || [ -z "${TENCENT_SECRET_KEY}" ]; then
+            echo "::warning::TENCENT_SECRET_ID / TENCENT_SECRET_KEY not configured; new repositories will be created private and flipped after sync"
+            exit 0
+          fi
+          pip install -q tencentcloud-sdk-python-tcr
+          python3 - <<'PY'
+          import json
+          import os
+
+          from tencentcloud.common import credential
+          from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
+          from tencentcloud.tcr.v20190924 import models, tcr_client
+
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "matrix.json"), encoding="utf-8") as f:
+              matrix = json.load(f)
+
+          cred = credential.Credential(os.environ["TENCENT_SECRET_ID"], os.environ["TENCENT_SECRET_KEY"])
+          client = tcr_client.TcrClient(cred, "ap-hongkong")
+
+          repos = set()
+          for item in matrix:
+              ns = item["ns"]
+              if item["mode"] == "arch":
+                  for arch in item["arches"]:
+                      repos.add(f"{ns}/" + item["name"].replace("{arch}", arch))
+              else:
+                  repos.add(f"{ns}/{item['name']}")
+
+          created = skipped = 0
+          for repo in sorted(repos):
+              req = models.CreateRepositoryPersonalRequest()
+              req.RepoName = repo
+              req.Public = 1  # 1=public: anonymous pull from the moment images land
+              req.Description = "Home Assistant Community Apps (Mirror)"
+              try:
+                  client.CreateRepositoryPersonal(req)
+                  created += 1
+              except TencentCloudSDKException as exc:
+                  # already-existing repositories are left untouched here;
+                  # the post-sync step flips any that are still private
+                  print(f"note: {repo}: {exc}")
+                  skipped += 1
+          print(f"pre-created {created} public repositories, {skipped} already existed or skipped")
+          PY
+
+  sync-images:
+    name: Sync ${{ matrix.addon.label }} to Tencent TCR HK
+    needs: prepare
+    runs-on: ubuntu-latest
+    # large images (music_assistant_nightly, esphome-dev ...) can take 40+
+    # minutes to copy through TCR; 60 was cancelling them mid-transfer
+    timeout-minutes: 240
+    if: needs.prepare.outputs.matrix != '[]'
+    strategy:
+      fail-fast: false
+      # Tencent TCR personal edition rate limits concurrent syncs
+      max-parallel: 6
+      matrix:
+        addon: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - name: Write TCR credentials to the Docker config
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY_HK }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # docker login pings the registry through the daemon with a hard
+          # 15s timeout, and that ping is what kept timing out on hosted
+          # runners ("Client.Timeout exceeded while awaiting headers").
+          # buildx only reads ~/.docker/config.json, so write the auth entry
+          # directly: no network involved, nothing to time out.
+          REG="$(printf '%s' "${ACR_REGISTRY}" | tr -d '[:space:]')"
+          ACR_USER="$(printf '%s' "${ACR_USERNAME}" | tr -d '[:space:]')"
+          export ACR_PASSWORD
+          mkdir -p "${HOME}/.docker"
+          python3 - "${REG}" "${ACR_USER}" <<'PY'
+          import base64, json, os, sys
+
+          reg, user = sys.argv[1], sys.argv[2]
+          password = os.environ["ACR_PASSWORD"].strip()
+          path = os.path.expanduser("~/.docker/config.json")
+          try:
+              with open(path, encoding="utf-8") as f:
+                  cfg = json.load(f)
+          except (OSError, ValueError):
+              cfg = {}
+          cfg.setdefault("auths", {})[reg] = {
+              "auth": base64.b64encode(f"{user}:{password}".encode()).decode(),
+          }
+          with open(path, "w", encoding="utf-8") as f:
+              json.dump(cfg, f)
+          print(f"credentials written for {reg}")
+          PY
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Sync images
+        env:
+          ADDON: ${{ matrix.addon.name }}
+          LABEL: ${{ matrix.addon.label }}
+          SRC: ${{ matrix.addon.src }}
+          VERSION: ${{ matrix.addon.version }}
+          MODE: ${{ matrix.addon.mode }}
+          ARCHES: ${{ toJson(matrix.addon.arches) }}
+          NS: ${{ matrix.addon.ns }}
+          FORCE: ${{ inputs.force_sync || false }}
+          DRY_RUN: "false"
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          set -uo pipefail
+
+          PREFIX="${ACR_REGISTRY}/${NS}"
+          REPOS="repos.txt"
+          : > "${REPOS}"
+
+          hassio_arch() {
+            # Map a container platform (GOARCH + variant) to the HA arch name
+            case "$1" in
+              amd64) echo "amd64" ;;
+              arm64) echo "aarch64" ;;
+              386) echo "i386" ;;
+              arm)
+                case "${2:-}" in
+                  v7) echo "armv7" ;;
+                  *) echo "armhf" ;;
+                esac ;;
+              *) echo "$1" ;;
+            esac
+          }
+
+          go_arch() {
+            # Inverse of hassio_arch for --override-arch/--override-variant
+            case "$1" in
+              amd64) echo "amd64" ;;
+              aarch64) echo "arm64" ;;
+              i386) echo "386" ;;
+              armhf) echo "arm v6" ;;
+              armv7) echo "arm v7" ;;
+              *) echo "$1" ;;
+            esac
+          }
+
+          # TCR personal edition rate limits the registry API (429); a failed
+          # existence check must be retried before treating the tag as absent,
+          # otherwise already-synced images get re-pushed every run.
+          dst_exists() {
+            local try=0
+            while [ "${try}" -lt 3 ]; do
+              if docker buildx imagetools inspect "$1" >/dev/null 2>&1; then
+                return 0
+              fi
+              try=$((try + 1))
+              [ "${try}" -lt 3 ] && sleep $((try * 5))
+            done
+            return 1
+          }
+
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            echo "- ⏳ **${LABEL}** (\`${PREFIX}/${ADDON}:${VERSION}\`): syncing" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "- 🔈 **${LABEL}**: dry run, nothing pushed" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          # Tencent TCR (personal edition) only accepts gzip-compressed docker
+          # schema2 content, while upstream ships zstd-compressed OCI layers:
+          # --format v2s2 --dest-compress-format gzip --dest-force-compress-format
+          # converts on the fly. --override-* (global flags) additionally pick
+          # exactly one platform out of a source index, dropping the
+          # unknown/unknown provenance/SBOM attestation manifests that TCR
+          # rejects ("403 blob type invalid").
+          # docker.io anonymous pulls are rate limited: authenticate when the
+          # source lives on docker.io, stay anonymous for ghcr.io.
+          if [[ "${SRC}" == docker.io/* ]]; then
+            src_creds=(--src-creds "${DOCKER_USERNAME}:${DOCKER_PASSWORD}")
+          else
+            src_creds=(--src-no-creds)
+          fi
+
+          # Two-phase copy: pull the image from the source to local disk first
+          # (zstd -> gzip, OCI -> docker schema2 conversion happens here), then
+          # push the local copy to the registry. Streaming directly between
+          # the two registries lets the slow Tencent ingest backpressure the
+          # docker.io reads until they die with "unexpected EOF".
+          copy_one() {
+            local src_ref="$1" dst="$2" goarch="$3" variant="$4" stage="$5"
+            local override=(--override-os linux --override-arch "${goarch}")
+            [ -n "${variant}" ] && override+=(--override-variant "${variant}")
+            rm -rf "${stage}"
+
+            # phase 1 stores the image verbatim on local disk (no format
+            # conversion: the dir transport rejects a zstd -> v2s2 manifest
+            # conversion) and phase 2 pushes the local copy, converting it to
+            # gzip schema2 on the way out. Phase-2 reads come from local disk,
+            # so the docker.io source connection can no longer be starved by
+            # the slow registry upload.
+            local attempt=1
+            while [ "${attempt}" -le 3 ]; do
+              if docker run --rm -v "${stage}:/stage" quay.io/skopeo/stable copy \
+                  "${override[@]}" \
+                  "${src_creds[@]}" \
+                  "docker://${src_ref}" "dir:/stage" \
+                && docker run --rm -v "${stage}:/stage" quay.io/skopeo/stable copy \
+                  --format v2s2 \
+                  --dest-compress-format gzip \
+                  --dest-force-compress-format \
+                  --dest-creds "${ACR_USERNAME}:${ACR_PASSWORD}" \
+                  "dir:/stage" "docker://${dst}"; then
+                sudo rm -rf "${stage}"
+                return 0
+              fi
+              echo "copy attempt ${attempt} failed for ${dst}, retrying"
+              attempt=$((attempt + 1))
+              sleep $((attempt * 15))
+            done
+            sudo rm -rf "${stage}"
+            return 1
+          }
+
+          synced=()
+          failed=()
+
+          if [ "${MODE}" = "arch" ]; then
+            # One image per architecture, named with {arch} inside the path
+            # (official core add-ons: {arch}-addon-<name>)
+            while IFS= read -r harch; do
+              [ -n "${harch}" ] || continue
+              set -- $(go_arch "${harch}")
+              dst="${PREFIX}/${ADDON//\{arch\}/${harch}}:${VERSION}"
+              src_ref="${SRC//\{arch\}/${harch}}:${VERSION}"
+              echo "${NS}/${ADDON//\{arch\}/${harch}}" >> "${REPOS}"
+
+              if [ "${FORCE}" != "true" ] && dst_exists "${dst}"; then
+                synced+=("${harch} (already up to date)")
+                continue
+              fi
+
+              if copy_one "${src_ref}" "${dst}" "$1" "${2:-}" "${RUNNER_TEMP}/stage-${harch}"; then
+                synced+=("${harch}")
+              else
+                failed+=("${harch}")
+              fi
+            done <<<"$(jq -r '.[]' <<<"${ARCHES}")"
+          else
+            # Plain tag is a multi-arch index: copy every real platform to a
+            # per-arch tag, then rebuild the plain tag as an index over them
+            src="${SRC}:${VERSION}"
+            src_raw="$(docker buildx imagetools inspect --raw "${src}" 2>/dev/null || true)"
+            if [ -z "${src_raw}" ]; then
+              echo "- ⚠️ **${LABEL}** \`${VERSION}\`: upstream image not published yet (${src})" >> "${GITHUB_STEP_SUMMARY}"
+              exit 0
+            fi
+
+            plats="$(jq -r '.manifests[]?
+              | select((.platform.os // "") != "unknown" and (.platform.architecture // "") != "unknown")
+              | "\(.platform.architecture)\t\(.platform.variant // "")"' <<<"${src_raw}" | sort -u)"
+            if [ -z "${plats}" ]; then
+              echo "- ⚠️ **${LABEL}** \`${VERSION}\`: no platform manifests in upstream index" >> "${GITHUB_STEP_SUMMARY}"
+              exit 0
+            fi
+
+            tags=()
+            copied=0
+            while IFS=$'\t' read -r goarch variant; do
+              harch="$(hassio_arch "${goarch}" "${variant}")"
+              dst="${PREFIX}/${ADDON}-${harch}:${VERSION}"
+              echo "${NS}/${ADDON}-${harch}" >> "${REPOS}"
+
+              if [ "${FORCE}" != "true" ] && dst_exists "${dst}"; then
+                synced+=("${harch} (already up to date)")
+                tags+=("${dst}")
+                continue
+              fi
+
+              if copy_one "${src}" "${dst}" "${goarch}" "${variant}" "${RUNNER_TEMP}/stage-${harch}"; then
+                synced+=("${harch}")
+                tags+=("${dst}")
+                copied=$((copied + 1))
+              else
+                failed+=("${harch}")
+              fi
+            done <<<"${plats}"
+
+            # Rebuild the plain multi-arch tag only when something was pushed;
+            # if every arch was already up to date the index is unchanged, and
+            # re-publishing it would only burn TCR API quota (429s)
+            if [ "${#failed[@]}" -eq 0 ] && [ "${copied}" -gt 0 ] && [ "${#tags[@]}" -gt 0 ]; then
+              if ! docker buildx imagetools create --tag "${PREFIX}/${ADDON}:${VERSION}" "${tags[@]}"; then
+                failed+=("index rebuild")
+              fi
+            fi
+            echo "${NS}/${ADDON}" >> "${REPOS}"
+          fi
+
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "- ❌ **${LABEL}** \`${VERSION}\`: failed: ${failed[*]}" >> "${GITHUB_STEP_SUMMARY}"
+            exit 1
+          fi
+
+          echo "- ✅ **${LABEL}** \`${VERSION}\`: ${#synced[@]} platform(s) [${synced[*]}]" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Set repositories public
+        env:
+          TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+          NS: ${{ matrix.addon.ns }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TENCENT_SECRET_ID}" ] || [ -z "${TENCENT_SECRET_KEY}" ]; then
+            echo "::warning::TENCENT_SECRET_ID / TENCENT_SECRET_KEY not configured, repositories stay private"
+            exit 0
+          fi
+          pip install -q tencentcloud-sdk-python-tcr
+          python3 - <<'PY'
+          import os
+
+          from tencentcloud.common import credential
+          from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
+          from tencentcloud.tcr.v20190924 import models, tcr_client
+
+          repos = sorted({line.strip() for line in open("repos.txt", encoding="utf-8") if line.strip()})
+          cred = credential.Credential(os.environ["TENCENT_SECRET_ID"], os.environ["TENCENT_SECRET_KEY"])
+          client = tcr_client.TcrClient(cred, "ap-hongkong")
+
+          failed = []
+          for repo in repos:
+              req = models.ModifyRepositoryAccessPersonalRequest()
+              req.RepoName = repo
+              req.Public = 1  # 1=public (anonymous pull), 0=private
+              try:
+                  client.ModifyRepositoryAccessPersonal(req)
+                  print(f"public: {repo}")
+              except TencentCloudSDKException as exc:
+                  # a repository that was never created (nothing pushed) has
+                  # nothing to publish - ignore, anything else is fatal
+                  print(f"warn: {repo}: {exc}")
+                  failed.append(repo)
+
+          if failed:
+              # visibility is guaranteed by the pre-create step; this pass is
+              # only a safety net, so a failure here must not fail the sync
+              print("::warning::failed to set public: " + ", ".join(failed))
+          PY

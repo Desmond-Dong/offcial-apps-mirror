@@ -1,0 +1,272 @@
+---
+name: Publish add-on tree
+
+# Builds and commits the repository tree after the sync workflows have
+# pushed images. An add-on whose images failed to sync keeps the version
+# that was published last run (restored from git) instead of being dropped
+# from the store; the next publish retries it.
+#
+# Triggered by every completed sync run plus a safety-net cron. The cron is
+# offset to a point in the 6h cycle where both sync workflows are expected
+# to be idle, so it replays the previous cycle's results.
+
+# yamllint disable-line rule:truthy
+on:
+  schedule:
+    - cron: "3 */6 * * *"
+  workflow_run:
+    workflows:
+      - "Sync images (main registry)"
+      - "Sync images (HK registry)"
+    types:
+      - completed
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-tree
+  cancel-in-progress: false
+
+env:
+  # Order matters: home-assistant/addons is processed first so official
+  # add-ons always keep their original names; every other upstream that
+  # hits an existing directory gets a numeric suffix on directory + slug.
+  UPSTREAM_REPOSITORIES: "home-assistant/addons hassio-addons/repository esphome/home-assistant-addon music-assistant/home-assistant-addon"
+  SKIP_ADDONS: "tor netease_cloud_music_api"
+  ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+  # HK personal registry (hkccr.ccs.tencentyun.com) hosts esphome and
+  # music-assistant; same account credentials as the main registry
+  ACR_REGISTRY_HK: ${{ secrets.ACR_REGISTRY_HK }}
+  REPO_NAME: Home Assistant Community Apps (Mirror)
+  REPO_URL: https://github.com/Desmond-Dong/offcial-apps-mirror
+  REPO_MAINTAINER: Desmond-Dong
+  SYNC_MAIN_WORKFLOW: sync-main.yaml
+  SYNC_HK_WORKFLOW: sync-hk.yaml
+
+jobs:
+  publish:
+    name: Publish repository tree
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - name: Collect add-ons whose images failed to sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          failed="${RUNNER_TEMP}/failed-addons.txt"
+          : > "${failed}"
+          # latest completed run of one sync workflow -> failed add-on labels
+          collect_one() {
+            local wf="$1" run_id
+            run_id="$(gh run list \
+              --repo "${{ github.repository }}" \
+              --workflow "${wf}" --branch main --status completed \
+              --limit 1 --json databaseId --jq '.[0].databaseId // ""')"
+            if [ -z "${run_id}" ]; then
+              echo "::warning::${wf}: no completed run yet, cannot tell which of its images failed"
+              return 0
+            fi
+            echo "${wf}: latest completed run ${run_id}"
+            gh api \
+              "repos/${{ github.repository }}/actions/runs/${run_id}/jobs?per_page=100" \
+              --paginate \
+              --jq '.jobs[] | select(.name | startswith("Sync ")) | "\(.name)\t\(.conclusion // .status)"' \
+            | while IFS=$'\t' read -r name status; do
+                label="${name#Sync }"
+                label="${label%% to *}"
+                if [ "${status}" != "success" ]; then
+                  echo "${label}"
+                fi
+              done >> "${failed}"
+          }
+          # retry: a transient GitHub API failure must not block publishing
+          attempt=1
+          while [ "${attempt}" -le 3 ]; do
+            : > "${failed}"
+            if collect_one "${SYNC_MAIN_WORKFLOW}" && collect_one "${SYNC_HK_WORKFLOW}"; then
+              break
+            fi
+            : > "${failed}"
+            attempt=$((attempt + 1))
+            sleep 10
+          done
+          sort -u "${failed}" -o "${failed}"
+          echo "held back: $(paste -sd' ' "${failed}")"
+
+      - name: Clean previously mirrored add-ons
+        run: |
+          set -euo pipefail
+          # Start from a clean managed set every run: the checkout contains
+          # last run's tree, and stale directories would otherwise win name
+          # collisions or hide upstream deletions
+          for d in */; do
+            if [ -f "${d}config.yaml" ] || [ -f "${d}config.json" ]; then
+              rm -rf "${d}"
+            fi
+          done
+
+      # Copy order decides name ownership: home-assistant/addons is first so
+      # official add-ons always keep their original names; any other upstream
+      # that collides gets a numeric suffix on directory + slug. Image
+      # rewrites are applied afterwards, scoped to each upstream's own
+      # directory list, so no replace step can touch another origin's files.
+      - name: Mirror add-ons from upstreams
+        run: |
+          set -euo pipefail
+          : > "${RUNNER_TEMP}/dirs-official.txt"
+          : > "${RUNNER_TEMP}/dirs-hassio.txt"
+          : > "${RUNNER_TEMP}/dirs-esphome.txt"
+          : > "${RUNNER_TEMP}/dirs-music.txt"
+          for repo in ${UPSTREAM_REPOSITORIES}; do
+            case "${repo}" in
+              home-assistant/addons) list="${RUNNER_TEMP}/dirs-official.txt" ;;
+              hassio-addons/repository) list="${RUNNER_TEMP}/dirs-hassio.txt" ;;
+              esphome/home-assistant-addon) list="${RUNNER_TEMP}/dirs-esphome.txt" ;;
+              music-assistant/home-assistant-addon) list="${RUNNER_TEMP}/dirs-music.txt" ;;
+              *) continue ;;
+            esac
+            dest="${RUNNER_TEMP}/upstream-${repo%%/*}"
+            git clone --depth 1 --quiet "https://github.com/${repo}.git" "${dest}"
+            for d in "${dest}"/*/; do
+              d="${d%/}"
+              name="$(basename "${d}")"
+              if [ ! -f "${d}/config.yaml" ]; then
+                continue
+              fi
+              target="${name}"
+              if [ -e "./${target}" ]; then
+                if [ "${repo}" = "home-assistant/addons" ]; then
+                  echo "::warning::official ${name} shadows an existing directory, skipping"
+                  continue
+                fi
+                try=2
+                while [ -e "./${target}${try}" ]; do
+                  try=$((try + 1))
+                done
+                target="${name}${try}"
+                echo "renamed ${repo}/${name} -> ${target} (name collision)"
+              fi
+              rsync -a --delete "${d}/" "./${target}/"
+              if [ "${target}" != "${name}" ]; then
+                sed -i "s/^slug:.*/slug: ${target}/" "./${target}/config.yaml"
+              fi
+              echo "${target}" >> "${list}"
+            done
+            # hassio-addons repository metadata reused by later steps
+            if [ "${repo}" = "hassio-addons/repository" ]; then
+              [ -f "${dest}/.apps.yml" ] && cp "${dest}/.apps.yml" ./.apps.yml
+              [ -f "${dest}/README.md" ] && cp "${dest}/README.md" ./README.md
+            fi
+          done
+
+      - name: Point image references at registry per upstream
+        env:
+          REG: "${{ env.ACR_REGISTRY }}"
+        run: |
+          set -euo pipefail
+          rewrite() {
+            while IFS= read -r d; do
+              [ -n "${d}" ] || continue
+              sed -i "$2" "./${d}/config.yaml"
+            done < "$1"
+          }
+          # hassio-addons: swap the ghcr host and turn the trailing /{arch}
+          # placeholder into the -{arch} suffix the supervisor resolves
+          rewrite "${RUNNER_TEMP}/dirs-hassio.txt" \
+            "s|ghcr.io/hassio-addons/|${REG}/hassio-addons/|g; s|/{arch}|-{arch}|g"
+          rewrite "${RUNNER_TEMP}/dirs-esphome.txt" \
+            "s|ghcr.io/esphome/|${ACR_REGISTRY_HK}/esp-mirror/|g"
+          rewrite "${RUNNER_TEMP}/dirs-music.txt" \
+            "s|ghcr.io/music-assistant/|${ACR_REGISTRY_HK}/ma-mirror/|g"
+          # official core add-ons use the supervisor alias homeassistant/
+          rewrite "${RUNNER_TEMP}/dirs-official.txt" \
+            "s|^image: homeassistant/|image: ${REG}/ha-apps/|"
+
+      - name: Remove excluded add-ons and keep previous versions
+        env:
+          FAILED_ADDONS_FILE: ${{ runner.temp }}/failed-addons.txt
+        run: |
+          set -euo pipefail
+          for name in ${SKIP_ADDONS}; do
+            rm -rf "./${name}"
+          done
+          # an add-on whose images did not finish syncing must not disappear
+          # from the store: put back the version published last run, so users
+          # keep a working (older) add-on until the retry succeeds
+          if [ -f "${FAILED_ADDONS_FILE}" ]; then
+            while IFS= read -r name; do
+              [ -n "${name}" ] || continue
+              if git cat-file -e "HEAD:${name}/config.yaml" 2>/dev/null; then
+                rm -rf "./${name}"
+                git checkout HEAD -- "${name}"
+                echo "kept previous version of ${name}"
+              else
+                echo "::warning::${name}: sync failed and no previous version exists, omitting"
+                rm -rf "./${name}"
+              fi
+            done < "${FAILED_ADDONS_FILE}"
+          fi
+
+      - name: Point .apps.yml images at TCR
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          find: "ghcr.io/hassio-addons/"
+          replace: "${{ env.ACR_REGISTRY }}/hassio-addons/"
+          regex: false
+          include: ".apps.yml"
+
+      - name: Drop unpublished apps from .apps.yml
+        run: |
+          python3 - <<'PY'
+          import os
+          # keep only entries that are actually published in this tree: an app
+          # restored to its previous version stays listed, a skipped or never
+          # published one is dropped
+          present = {
+              d for d in os.listdir(".")
+              if os.path.exists(os.path.join(d, "config.yaml"))
+          }
+          path = ".apps.yml"
+          with open(path, encoding="utf-8") as f:
+              lines = f.read().splitlines(True)
+          out, drop = [], False
+          for line in lines:
+              if line and not line[0].isspace():
+                  drop = False
+              elif line.startswith("  ") and not line.startswith("    "):
+                  drop = line.strip().rstrip(":") not in present
+              if not drop:
+                  out.append(line)
+          with open(path, "w", encoding="utf-8") as f:
+              f.write("".join(out))
+          PY
+
+      - name: Point README at this repository
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          find: "https://github.com/hassio-addons/repository"
+          replace: "https://github.com/Desmond-Dong/offcial-apps-mirror"
+          regex: false
+          include: "README.md"
+
+      - name: Write repository.json
+        run: |
+          jq -n \
+            --arg name "$REPO_NAME" \
+            --arg url "$REPO_URL" \
+            --arg maintainer "$REPO_MAINTAINER" \
+            '{name: $name, url: $url, maintainer: $maintainer}' > repository.json
+
+      - name: Commit and push
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: "chore: sync upstream repository"
