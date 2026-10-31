@@ -316,14 +316,16 @@ jobs:
               fi
               seen="${seen}${final_name} "
 
-              # per-upstream registry namespace and target registry host:
-              # esphome and music-assistant live in the HK registry
+              # per-upstream registry namespace and target registry: esphome
+              # and music-assistant live in the HK registry. reg is an alias
+              # ('main'|'hk') - a secret-resolved host here would make GitHub
+              # refuse the whole matrix output ("may contain secret")
               case "${repo}" in
-                home-assistant/addons)                ns="ha-apps";       reg="${ACR_REGISTRY}" ;;
-                hassio-addons/repository)             ns="hassio-addons"; reg="${ACR_REGISTRY}" ;;
-                esphome/home-assistant-addon)         ns="esp-mirror";    reg="${ACR_REGISTRY_HK}" ;;
-                music-assistant/home-assistant-addon) ns="ma-mirror";     reg="${ACR_REGISTRY_HK}" ;;
-                *)                                    ns="hassioapps";    reg="${ACR_REGISTRY}" ;;
+                home-assistant/addons)                ns="ha-apps";       reg="main" ;;
+                hassio-addons/repository)             ns="hassio-addons"; reg="main" ;;
+                esphome/home-assistant-addon)         ns="esp-mirror";    reg="hk" ;;
+                music-assistant/home-assistant-addon) ns="ma-mirror";     reg="hk" ;;
+                *)                                    ns="hassioapps";    reg="main" ;;
               esac
 
               # no registry host (official core "homeassistant/..." and plain
@@ -394,10 +396,10 @@ jobs:
               matrix = json.load(f)
 
           cred = credential.Credential(os.environ["TENCENT_SECRET_ID"], os.environ["TENCENT_SECRET_KEY"])
-          # one client per registry region: main (Guangzhou) and HK
+          # one client per registry region, keyed by the matrix's reg alias
           clients = {
-              os.environ["ACR_REGISTRY"]: tcr_client.TcrClient(cred, "ap-guangzhou"),
-              os.environ["ACR_REGISTRY_HK"]: tcr_client.TcrClient(cred, "ap-hongkong"),
+              "main": tcr_client.TcrClient(cred, "ap-guangzhou"),
+              "hk": tcr_client.TcrClient(cred, "ap-hongkong"),
           }
 
           repos = {}
@@ -503,7 +505,13 @@ jobs:
         run: |
           set -uo pipefail
 
-          PREFIX="${ADDON_REG}/${NS}"
+          # ADDON_REG is a registry alias ('main'|'hk'); resolve the host here
+          # so no secret value ever lands in the prepare job's matrix output
+          case "${ADDON_REG}" in
+            hk) REG_HOST="${ACR_REGISTRY_HK}" ;;
+            *)  REG_HOST="${ACR_REGISTRY}" ;;
+          esac
+          PREFIX="${REG_HOST}/${NS}"
           REPOS="repos.txt"
           : > "${REPOS}"
 
@@ -717,7 +725,7 @@ jobs:
 
           repos = sorted({line.strip() for line in open("repos.txt", encoding="utf-8") if line.strip()})
           cred = credential.Credential(os.environ["TENCENT_SECRET_ID"], os.environ["TENCENT_SECRET_KEY"])
-          region = "ap-hongkong" if os.environ["ADDON_REG"] == os.environ["ACR_REGISTRY_HK"] else "ap-guangzhou"
+          region = "ap-hongkong" if os.environ["ADDON_REG"] == "hk" else "ap-guangzhou"
           client = tcr_client.TcrClient(cred, region)
 
           failed = []
